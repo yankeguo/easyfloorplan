@@ -133,11 +133,30 @@ section p, .rules {
 
 .interval-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 22px 1fr auto auto;
   gap: 6px;
   align-items: center;
   margin-bottom: 6px;
 }
+
+.interval-row.is-dragging { opacity: 0.45; }
+.interval-row.is-drop { outline: 2px solid var(--teal); border-radius: 8px; }
+
+.drag {
+  width: 22px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  letter-spacing: -1px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag:active { cursor: grabbing; }
+.drag:hover { background: #f0e7df; color: var(--ink); }
 
 .interval-row label {
   display: grid;
@@ -169,7 +188,7 @@ section p, .rules {
 
 .interval-row input.invalid { border-color: var(--danger); background: #fff4f1; }
 
-.interval-row button {
+.interval-row .remove {
   width: 28px;
   height: 32px;
   border: 0;
@@ -179,9 +198,63 @@ section p, .rules {
   border-radius: 8px;
 }
 
-.interval-row button:hover { background: #f0e7df; color: var(--danger); }
+.interval-row .remove:hover { background: #f0e7df; color: var(--danger); }
+
+.interval-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .add { margin-top: 2px; }
+
+dialog {
+  width: min(440px, calc(100vw - 24px));
+  max-height: min(86vh, 760px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--sidebar);
+  color: var(--ink);
+  box-shadow: 0 18px 50px rgba(36, 31, 27, 0.2);
+}
+
+dialog::backdrop { background: rgba(36, 31, 27, 0.38); }
+
+#sequence-form { padding: 16px; }
+
+#sequence-form h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0; }
+#sequence-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+#sequence-editor { max-height: 48vh; overflow: auto; margin: 10px 0; }
+
+.sequence {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+
+.sequence-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sequence-head strong { font-size: 13px; }
+
+.sequence-head button, .dialog-actions button {
+  border: 1px solid #ddd4c8;
+  background: white;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-actions .primary { background: var(--teal); border-color: var(--teal); color: white; }
+
+#sequence-preview { margin: 0 0 12px; color: var(--ink); }
 
 #readout {
   display: grid;

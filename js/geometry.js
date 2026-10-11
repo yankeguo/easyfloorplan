@@ -1,20 +1,21 @@
-export const WALL_THICKNESS = 0.12;
-export const DOOR_WIDTH = 1;
-export const MIN_INTERVAL = 0.3;
-export const MAX_INTERVAL = 100;
+export const WALL_THICKNESS = 120;
+export const DOOR_WIDTH = 1000;
+export const MIN_INTERVAL = 300;
+export const MAX_INTERVAL = 100000;
 export const MAX_INTERVALS = 24;
+export const MAX_SEQUENCES = 8;
+export const MAX_SETTLED = 48;
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
 export function roundMm(value) {
-  return Math.round(value * 1000) / 1000;
+  return Math.round(value);
 }
 
-export function formatMeters(value) {
-  const rounded = roundMm(value);
-  return String(rounded);
+export function formatMm(value) {
+  return String(roundMm(value));
 }
 
 export function prefixSums(intervals) {
@@ -23,6 +24,31 @@ export function prefixSums(intervals) {
     positions.push(roundMm(positions[positions.length - 1] + interval));
   }
   return positions;
+}
+
+export function meterIndex(positions, meter) {
+  for (let index = 0; index < positions.length; index += 1) {
+    if (Math.abs(positions[index] - meter) <= 1e-6) return index;
+  }
+  return -1;
+}
+
+export function mergeSequences(sequences) {
+  const points = new Set([0]);
+  for (const sequence of sequences) {
+    let cursor = 0;
+    for (const interval of sequence) {
+      cursor = roundMm(cursor + interval);
+      points.add(cursor);
+    }
+  }
+  const positions = [...points].sort((a, b) => a - b);
+  const intervals = [];
+  for (let index = 1; index < positions.length; index += 1) {
+    const gap = roundMm(positions[index] - positions[index - 1]);
+    if (gap > 0) intervals.push(gap);
+  }
+  return intervals;
 }
 
 export function xAxisName(index) {
@@ -334,8 +360,8 @@ function slideToFree(meter, minStart, maxStart, others, door, positions) {
     const otherStart = positions[other.anchor] + other.local;
     gaps = subtractGaps(
       gaps,
-      otherStart - DOOR_WIDTH + 1e-4,
-      otherStart + DOOR_WIDTH - 1e-4,
+      otherStart - DOOR_WIDTH + 0.1,
+      otherStart + DOOR_WIDTH - 0.1,
     );
   }
   if (gaps.length === 0) return null;

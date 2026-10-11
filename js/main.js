@@ -1,9 +1,14 @@
 import {
+  DOOR_WIDTH,
   MAX_INTERVAL,
+  MAX_INTERVALS,
+  MAX_SEQUENCES,
   MIN_INTERVAL,
-  formatMeters,
+  formatMm,
   gridSpan,
+  roundMm,
   labelAnchor,
+  mergeSequences,
   runIsWindow,
   runKey,
   spaceNetArea,
@@ -24,11 +29,13 @@ import {
   placeDoor,
   positionsOf,
   removeIntervalAt,
+  reorderInterval,
   runByKey,
   runContaining,
   serialize,
   setIntervalValue,
   setSpaceLabel,
+  settleSequences,
   spacesOf,
   toggleWindow,
   updateDoor,
@@ -40,7 +47,7 @@ const HINTS = {
   select: "点选墙、门或空间。拖动空白处平移，滚轮缩放，双击空间可改标签。",
   wall: "依次点击同一条参考线上的两个交叉点。按住空格可平移。",
   erase: "依次点击两个交叉点，去掉它们之间的墙。",
-  door: "在墙面上点击，放下一扇 1 米宽的门。拖动可改位置。",
+  door: "在墙面上点击，放下一扇 1000 mm 宽的门。拖动可改位置。",
   window: "点击一面墙，标记这面墙上有窗。再点一次取消。",
   label: "点击一个空间，为它填写名称。",
 };
@@ -53,10 +60,14 @@ const sidebar = document.getElementById("sidebar");
 const editor = document.getElementById("label-editor");
 const hint = document.getElementById("hint");
 const status = document.getElementById("status");
+const sequenceDialog = document.getElementById("sequence-dialog");
+const sequenceForm = document.getElementById("sequence-form");
+const sequenceEditor = document.getElementById("sequence-editor");
+const sequencePreview = document.getElementById("sequence-preview");
 
 const app = {
   state: loadState(),
-  view: { ox: 0, oy: 0, ppm: 40 },
+  view: { ox: 0, oy: 0, ppm: 0.04 },
   viewCustom: false,
   tool: "select",
   selection: null,
@@ -72,6 +83,7 @@ const app = {
   undo: [],
   redo: [],
   intervalSnapshot: null,
+  sequenceDraft: null,
   lastHit: null,
   cssWidth: 1,
   cssHeight: 1,
@@ -122,9 +134,20 @@ sidebar.addEventListener("focusout", (event) => {
   const index = Number(event.target.dataset.index);
   const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
   event.target.classList.remove("invalid");
-  if (list[index] != null) event.target.value = formatMeters(list[index]);
+  if (list[index] != null) event.target.value = formatMm(list[index]);
 });
 sidebar.addEventListener("input", onIntervalInput);
+document.addEventListener("pointerdown", onIntervalDragStart);
+document.addEventListener("pointermove", onIntervalDragMove);
+document.addEventListener("pointerup", onIntervalDragEnd);
+document.addEventListener("pointercancel", onIntervalDragEnd);
+sequenceForm.addEventListener("submit", onSequenceSubmit);
+sequenceForm.addEventListener("click", onSequenceClick);
+sequenceForm.addEventListener("input", onSequenceInput);
+document.getElementById("sequence-cancel").addEventListener("click", () => {
+  app.sequenceDraft = null;
+  sequenceDialog.close();
+});
 sidebar.addEventListener(
   "wheel",
   (event) => {
@@ -345,22 +368,23 @@ function intervalMarkup(axis) {
   const title = axis === "x" ? "横向间隔" : "纵向间隔";
   const help =
     axis === "x"
-      ? "从左到右每一段的宽度，用来生成竖向参考线。"
-      : "从下到上每一段的进深，用来生成横向参考线。";
+      ? "从左到右每一段的宽度，生成竖向参考线。拖动把手只调换长度。"
+      : "从下到上每一段的进深，生成横向参考线。拖动把手只调换长度。";
   const rows = list
     .map(
       (value, index) => `
-        <div class="interval-row">
+        <div class="interval-row" data-axis="${axis}" data-index="${index}">
+          <button type="button" class="drag" data-action="drag-interval" aria-label="拖动重排第 ${index + 1} 段" ${list.length <= 1 ? "disabled" : ""}>⋮⋮</button>
           <label>
             <span>${index + 1}</span>
-            <input data-axis="${axis}" data-index="${index}" type="number" min="${MIN_INTERVAL}" max="${MAX_INTERVAL}" step="0.1" value="${formatMeters(value)}" inputmode="decimal" aria-label="${title} ${index + 1}" />
+            <input data-axis="${axis}" data-index="${index}" type="number" min="${MIN_INTERVAL}" max="${MAX_INTERVAL}" step="1" value="${formatMm(value)}" inputmode="numeric" aria-label="${title} ${index + 1}" />
           </label>
-          <em>m</em>
-          <button type="button" data-action="remove-interval" data-axis="${axis}" data-index="${index}" ${list.length <= 1 ? "disabled" : ""} aria-label="删除第 ${index + 1} 段">×</button>
+          <em>mm</em>
+          <button type="button" class="remove" data-action="remove-interval" data-axis="${axis}" data-index="${index}" ${list.length <= 1 ? "disabled" : ""} aria-label="删除第 ${index + 1} 段">×</button>
         </div>`,
     )
     .join("");
-  return `<h2>${title}</h2><p>${help}</p>${rows}<button type="button" class="add" data-action="add-interval" data-axis="${axis}">添加一段</button>`;
+  return `<h2>${title}</h2><p>${help}</p>${rows}<div class="interval-actions"><button type="button" class="add" data-action="add-interval" data-axis="${axis}">添加一段</button><button type="button" class="add" data-action="open-sequences" data-axis="${axis}">多序列切分</button></div>`;
 }
 
 function renderReadout() {
@@ -369,19 +393,19 @@ function renderReadout() {
     positions
       .map(
         (meter, index) =>
-          `<li><b>${name(index)}</b><span>${formatMeters(meter)} m</span></li>`,
+          `<li><b>${name(index)}</b><span>${formatMm(meter)} mm</span></li>`,
       )
       .join("");
   document.getElementById("readout").innerHTML = `
     <div>
       <h2>竖向参考线</h2>
       <ol>${items(x, xAxisName)}</ol>
-      <p class="total">总宽 ${formatMeters(x[x.length - 1])} m</p>
+      <p class="total">总宽 ${formatMm(x[x.length - 1])} mm</p>
     </div>
     <div>
       <h2>横向参考线</h2>
       <ol>${items(y, yAxisName)}</ol>
-      <p class="total">总深 ${formatMeters(y[y.length - 1])} m</p>
+      <p class="total">总深 ${formatMm(y[y.length - 1])} mm</p>
     </div>`;
 }
 
@@ -390,7 +414,7 @@ function renderSelection() {
   const selection = app.selection;
   if (!selection) {
     mount.innerHTML =
-      '<div class="selection-empty"><p>未选中墙、门或空间。</p><p>墙厚 12 cm，门洞 1 m。</p></div>';
+      '<div class="selection-empty"><p>未选中墙、门或空间。</p><p>墙厚 120 mm，门洞 1000 mm。</p></div>';
     return;
   }
   if (selection.type === "wall") {
@@ -410,8 +434,8 @@ function renderSelection() {
     mount.innerHTML = `
       <div class="selection">
         <h3>${title} 上的墙</h3>
-        <p>长度 ${formatMeters(length)} m · 门 ${doorCount} 扇</p>
-        ${length < 1 ? "<p>这面墙不到 1 米，不能开门。</p>" : ""}
+        <p>长度 ${formatMm(length)} mm · 门 ${doorCount} 扇</p>
+        ${length < DOOR_WIDTH ? `<p>这面墙不到 ${DOOR_WIDTH} mm，不能开门。</p>` : ""}
         <label class="check"><input type="checkbox" data-action="toggle-window" ${windowOn ? "checked" : ""} />这面墙有窗</label>
         <div class="row"><button type="button" data-action="delete-wall">删除这面墙</button></div>
       </div>`;
@@ -426,7 +450,7 @@ function renderSelection() {
     mount.innerHTML = `
       <div class="selection">
         <h3>门洞</h3>
-        <p>宽度 1 m，距墙起点 <span data-door-pos>${doorOffsetText(door)}</span></p>
+        <p>宽度 ${DOOR_WIDTH} mm，距墙起点 <span data-door-pos>${doorOffsetText(door)}</span></p>
         <div class="row">
           <button type="button" data-action="flip-hinge">换合页边</button>
           <button type="button" data-action="flip-side">换开启侧</button>
@@ -441,7 +465,7 @@ function renderSelection() {
     return;
   }
   const { x, y } = positionsOf(app.state);
-  const area = spaceNetArea(space, x, y, app.state.hEdges, app.state.vEdges);
+  const area = spaceNetArea(space, x, y, app.state.hEdges, app.state.vEdges) / 1_000_000;
   const label = labelForSpace(app.state, space);
   mount.innerHTML = `
     <div class="selection">
@@ -459,7 +483,7 @@ function doorOffsetText(door) {
   const run = runContaining(app.state, door.dir, door.line, door.anchor);
   const start = positions[door.anchor] + door.local;
   const origin = run ? positions[run.start] : 0;
-  return `${formatMeters(Math.max(0, start - origin))} m`;
+  return `${formatMm(Math.max(0, start - origin))} mm`;
 }
 
 function escapeHtml(value) {
@@ -477,9 +501,14 @@ function onSidebarClick(event) {
   if (action === "add-interval") {
     const axis = button.dataset.axis;
     const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
-    const result = mutate(() => addInterval(app.state, axis, list[list.length - 1] || 3));
+    const result = mutate(() => addInterval(app.state, axis, list[list.length - 1] || 3000));
     app.anchor = null;
     if (result.ok) refresh({ intervals: true, refit: true });
+    return;
+  }
+  if (action === "drag-interval") return;
+  if (action === "open-sequences") {
+    openSequenceDialog(button.dataset.axis);
     return;
   }
   if (action === "remove-interval") {
@@ -526,19 +555,242 @@ function onSidebarChange(event) {
   refresh();
 }
 
+let intervalDrag = null;
+
+function onIntervalDragStart(event) {
+  const handle = event.target.closest("[data-action='drag-interval']");
+  if (!handle || handle.disabled || event.button !== 0) return;
+  const row = handle.closest(".interval-row");
+  if (!row) return;
+  event.preventDefault();
+  handle.setPointerCapture(event.pointerId);
+  intervalDrag = {
+    pointerId: event.pointerId,
+    from: Number(row.dataset.index),
+    axis: row.dataset.axis || "",
+    seq: row.dataset.seq ?? "",
+    row,
+  };
+  row.classList.add("is-dragging");
+}
+
+function onIntervalDragMove(event) {
+  if (!intervalDrag || event.pointerId !== intervalDrag.pointerId) return;
+  const target = intervalRowAt(event.clientX, event.clientY);
+  for (const row of intervalDragRows()) row.classList.toggle("is-drop", row === target);
+}
+
+function onIntervalDragEnd(event) {
+  if (!intervalDrag || event.pointerId !== intervalDrag.pointerId) return;
+  const target = intervalRowAt(event.clientX, event.clientY);
+  const drag = intervalDrag;
+  clearIntervalDrag();
+  if (!target) return;
+  const to = Number(target.dataset.index);
+  if (to === drag.from) return;
+  if (drag.seq === "") {
+    const result = mutate(() => reorderInterval(app.state, drag.axis, drag.from, to));
+    app.anchor = null;
+    if (result.ok) refresh({ intervals: true });
+    return;
+  }
+  syncSequenceDraft();
+  const list = app.sequenceDraft?.sequences[Number(drag.seq)];
+  if (!list) return;
+  const [value] = list.splice(drag.from, 1);
+  list.splice(to, 0, value);
+  renderSequenceDialog();
+}
+
+function clearIntervalDrag() {
+  if (!intervalDrag) return;
+  for (const row of intervalDragRows()) row.classList.remove("is-dragging", "is-drop");
+  intervalDrag = null;
+}
+
+function intervalDragRows() {
+  if (!intervalDrag) return [];
+  const selector =
+    intervalDrag.seq === ""
+      ? `#panel-${intervalDrag.axis} .interval-row`
+      : `#sequence-editor [data-seq="${intervalDrag.seq}"] .interval-row`;
+  return [...document.querySelectorAll(selector)];
+}
+
+function intervalRowAt(x, y) {
+  const hit = document.elementFromPoint(x, y);
+  const row = hit?.closest?.(".interval-row");
+  if (!row || !intervalDrag) return null;
+  const sameGroup =
+    intervalDrag.seq === ""
+      ? row.dataset.axis === intervalDrag.axis && row.dataset.seq == null
+      : row.dataset.seq === intervalDrag.seq;
+  return sameGroup ? row : null;
+}
+
+function openSequenceDialog(axis) {
+  const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
+  app.sequenceDraft = {
+    axis,
+    sequences: [list.map((value) => formatMm(value))],
+  };
+  document.getElementById("sequence-title").textContent =
+    axis === "x" ? "横向多序列切分" : "纵向多序列切分";
+  renderSequenceDialog();
+  sequenceDialog.showModal();
+}
+
+function renderSequenceDialog() {
+  const draft = app.sequenceDraft;
+  if (!draft) return;
+  const canRemoveSequence = draft.sequences.length > 1;
+  sequenceEditor.innerHTML = draft.sequences
+    .map((sequence, seq) => {
+      const rows = sequence
+        .map(
+          (value, index) => `
+          <div class="interval-row" data-seq="${seq}" data-index="${index}">
+            <button type="button" class="drag" data-action="drag-interval" aria-label="拖动重排序列 ${seq + 1} 的第 ${index + 1} 段" ${sequence.length <= 1 ? "disabled" : ""}>⋮⋮</button>
+            <label>
+              <span>${index + 1}</span>
+              <input data-seq="${seq}" data-entry="${index}" type="number" min="${MIN_INTERVAL}" max="${MAX_INTERVAL}" step="1" value="${escapeHtml(value)}" inputmode="numeric" aria-label="序列 ${seq + 1} 第 ${index + 1} 段" />
+            </label>
+            <em>mm</em>
+            <button type="button" class="remove" data-action="remove-sequence-entry" data-seq="${seq}" data-index="${index}" ${sequence.length <= 1 && !canRemoveSequence ? "disabled" : ""} aria-label="删除序列 ${seq + 1} 的第 ${index + 1} 段">×</button>
+          </div>`,
+        )
+        .join("");
+      return `
+        <div class="sequence" data-seq="${seq}">
+          <div class="sequence-head">
+            <strong>序列 ${seq + 1}</strong>
+            <button type="button" data-action="remove-sequence" data-seq="${seq}" ${canRemoveSequence ? "" : "disabled"}>删除序列</button>
+          </div>
+          ${rows}
+          <button type="button" class="add" data-action="add-sequence-entry" data-seq="${seq}" ${sequence.length >= MAX_INTERVALS ? "disabled" : ""}>添加一段</button>
+        </div>`;
+    })
+    .join("");
+  const addSequence = document.createElement("button");
+  addSequence.type = "button";
+  addSequence.className = "add";
+  addSequence.dataset.action = "add-sequence";
+  addSequence.textContent = "添加序列";
+  addSequence.disabled = draft.sequences.length >= MAX_SEQUENCES;
+  sequenceEditor.append(addSequence);
+  updateSequencePreview();
+}
+
+function syncSequenceDraft() {
+  const draft = app.sequenceDraft;
+  if (!draft) return;
+  const sequences = [];
+  for (const card of sequenceEditor.querySelectorAll(".sequence")) {
+    sequences.push([...card.querySelectorAll("input[data-entry]")].map((input) => input.value));
+  }
+  if (sequences.length > 0) draft.sequences = sequences;
+}
+
+function updateSequencePreview() {
+  const draft = app.sequenceDraft;
+  if (!draft) return;
+  const sequences = [];
+  for (const sequence of draft.sequences) {
+    const values = [];
+    for (const raw of sequence) {
+      const value = roundMm(Number(raw));
+      if (!Number.isFinite(value) || value < MIN_INTERVAL || value > MAX_INTERVAL) {
+        sequencePreview.textContent = `每一段要在 ${MIN_INTERVAL} mm 到 ${MAX_INTERVAL} mm 之间。`;
+        return;
+      }
+      values.push(value);
+    }
+    if (values.length === 0) {
+      sequencePreview.textContent = "每条序列至少保留一段。";
+      return;
+    }
+    sequences.push(values);
+  }
+  const intervals = mergeSequences(sequences);
+  sequencePreview.textContent = `结算后 ${intervals.map((value) => formatMm(value)).join(" · ")} mm，共 ${intervals.length} 段。`;
+}
+
+function onSequenceInput(event) {
+  const input = event.target;
+  if (!input.matches?.("input[data-entry]")) return;
+  syncSequenceDraft();
+  updateSequencePreview();
+}
+
+function onSequenceClick(event) {
+  const button = event.target.closest("[data-action]");
+  if (!button || !app.sequenceDraft) return;
+  const action = button.dataset.action;
+  if (action === "drag-interval") return;
+  syncSequenceDraft();
+  const draft = app.sequenceDraft;
+  const seq = Number(button.dataset.seq);
+  if (action === "add-sequence") {
+    if (draft.sequences.length >= MAX_SEQUENCES) return;
+    const previous = draft.sequences.at(-1);
+    draft.sequences.push([previous?.at(-1) || "3000"]);
+  } else if (action === "remove-sequence") {
+    if (draft.sequences.length <= 1) return;
+    draft.sequences.splice(seq, 1);
+  } else if (action === "add-sequence-entry") {
+    const sequence = draft.sequences[seq];
+    if (!sequence || sequence.length >= MAX_INTERVALS) return;
+    sequence.push(sequence.at(-1) || "3000");
+  } else if (action === "remove-sequence-entry") {
+    const sequence = draft.sequences[seq];
+    if (!sequence) return;
+    if (sequence.length <= 1) {
+      if (draft.sequences.length <= 1) return;
+      draft.sequences.splice(seq, 1);
+    } else {
+      sequence.splice(Number(button.dataset.index), 1);
+    }
+  } else {
+    return;
+  }
+  renderSequenceDialog();
+}
+
+function onSequenceSubmit(event) {
+  event.preventDefault();
+  if (!app.sequenceDraft) return;
+  syncSequenceDraft();
+  const draft = app.sequenceDraft;
+  const result = mutate(() =>
+    settleSequences(
+      app.state,
+      draft.axis,
+      draft.sequences.map((sequence) => sequence.map((value) => Number(value))),
+    ),
+  );
+  if (!result.ok) {
+    if (result.message) sequencePreview.textContent = result.message;
+    return;
+  }
+  app.sequenceDraft = null;
+  app.anchor = null;
+  app.selection = null;
+  sequenceDialog.close();
+  refresh({ intervals: true, refit: true });
+}
+
 function onIntervalInput(event) {
   const input = event.target;
   if (!input.matches("[data-axis]")) return;
   const axis = input.dataset.axis;
   const index = Number(input.dataset.index);
   const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
-  const value = Number(input.value);
-  if (!Number.isFinite(value) || value < MIN_INTERVAL || value > MAX_INTERVAL) {
+  const rounded = roundMm(Number(input.value));
+  if (!Number.isFinite(rounded) || rounded < MIN_INTERVAL || rounded > MAX_INTERVAL) {
     input.classList.add("invalid");
     return;
   }
   input.classList.remove("invalid");
-  const rounded = Math.round(value * 1000) / 1000;
   if (list[index] === rounded) return;
   if (app.intervalSnapshot) {
     app.undo.push(app.intervalSnapshot);
@@ -933,9 +1185,9 @@ function renderStatus(hit) {
     positionsOf(app.state).y.at(-1),
   );
   const zoom = Math.round((app.view.ppm / fitted.ppm) * 100);
-  let message = `墙 12 cm · 门 1 m · ${zoom}%`;
+  let message = `墙 120 mm · 门 1000 mm · ${zoom}%`;
   if (hit?.world) {
-    message = `X ${formatMeters(hit.world.x)} m · Y ${formatMeters(hit.world.y)} m · ${message}`;
+    message = `X ${formatMm(hit.world.x)} mm · Y ${formatMm(hit.world.y)} mm · ${message}`;
   }
   if (app.anchor && app.hoverPoint && !app.preview && (app.tool === "wall" || app.tool === "erase")) {
     message = `不在同一条参考线上 · ${message}`;
@@ -978,8 +1230,8 @@ function exportPng() {
   const { x, y } = positionsOf(app.state);
   const worldWidth = x[x.length - 1];
   const worldHeight = y[y.length - 1];
-  const longEdge = Math.max(worldWidth, worldHeight, 0.1);
-  const ppm = Math.min(90, 3400 / longEdge);
+  const longEdge = Math.max(worldWidth, worldHeight, 100);
+  const ppm = Math.min(0.09, 3400 / longEdge);
   const pad = 120;
   const width = Math.ceil(worldWidth * ppm + pad * 2);
   const height = Math.ceil(worldHeight * ppm + pad * 2);

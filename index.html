@@ -26,15 +26,15 @@
       <div class="workspace">
         <aside id="sidebar">
           <ol class="steps">
-            <li>填写横向、纵向间隔，生成参考线。</li>
-            <li>只在交叉点之间连墙，墙厚 12 cm。</li>
+            <li>填写横向、纵向间隔，生成参考线。要切得更细时，用多条序列交叉后再结算。</li>
+            <li>只在交叉点之间连墙，墙厚 120 mm。</li>
             <li>在墙上开门、标出有窗的墙，再给空间命名。</li>
           </ol>
           <section id="panel-x"></section>
           <section id="panel-y"></section>
           <section id="readout"></section>
           <section id="selection"></section>
-          <p class="rules">墙以参考线为中心，厚度固定 12 cm。门洞宽度固定 1 m，不能把点放在交叉点之外。</p>
+          <p class="rules">墙以参考线为中心，厚度固定 120 mm。门洞宽度固定 1000 mm，不能把点放在交叉点之外。</p>
           <div class="footer-actions">
             <button id="sample" type="button">载入示例</button>
             <button id="clear" type="button">清空墙体</button>
@@ -90,6 +90,18 @@
         </section>
       </div>
     </div>
+    <dialog id="sequence-dialog">
+      <form id="sequence-form">
+        <h2 id="sequence-title">多序列切分</h2>
+        <p id="sequence-help">每条序列都从起点量起。保存时合并所有切分点，结算成一条间隔。</p>
+        <div id="sequence-editor"></div>
+        <p id="sequence-preview"></p>
+        <div class="dialog-actions">
+          <button type="button" id="sequence-cancel">取消</button>
+          <button type="submit" class="primary">结算并保存</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="js/main.js"></script>
   </body>
 </html>

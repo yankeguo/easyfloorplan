@@ -2,14 +2,19 @@ import {
   DOOR_WIDTH,
   MAX_INTERVAL,
   MAX_INTERVALS,
+  MAX_SEQUENCES,
+  MAX_SETTLED,
   MIN_INTERVAL,
   addSpan,
   anchorFromMeter,
   computeRuns,
   computeSpaces,
+  edgeKey,
   findRunContainingEdge,
   fitDoor,
   gridSpan,
+  mergeSequences,
+  meterIndex,
   normalizeDoors,
   prefixSums,
   rebindLabels,
@@ -23,8 +28,8 @@ import {
 
 export function emptyState() {
   return {
-    xIntervals: [4.2, 3.6],
-    yIntervals: [3.6, 3.0],
+    xIntervals: [4200, 3600],
+    yIntervals: [3600, 3000],
     hEdges: new Set(),
     vEdges: new Set(),
     windowEdges: new Set(),
@@ -55,10 +60,11 @@ export function runsOf(state) {
 }
 
 export function normalize(state) {
-  if (state.xIntervals.length < 1) state.xIntervals = [3];
-  if (state.yIntervals.length < 1) state.yIntervals = [3];
+  if (state.xIntervals.length < 1) state.xIntervals = [3000];
+  if (state.yIntervals.length < 1) state.yIntervals = [3000];
   state.xIntervals = state.xIntervals.map((value) => roundMm(value));
   state.yIntervals = state.yIntervals.map((value) => roundMm(value));
+  state.doors = state.doors.map((door) => ({ ...door, local: roundMm(door.local) }));
   for (const key of [...state.windowEdges]) {
     const dir = key.slice(0, 1);
     const walls = dir === "h" ? state.hEdges : state.vEdges;
@@ -72,8 +78,8 @@ export function normalize(state) {
 
 export function createSample() {
   const state = emptyState();
-  state.xIntervals = [3.9, 3.3, 2.7];
-  state.yIntervals = [4.8, 3.0];
+  state.xIntervals = [3900, 3300, 2700];
+  state.yIntervals = [4800, 3000];
   addSpan(state.hEdges, "h", 0, 0, 3);
   addSpan(state.hEdges, "h", 2, 0, 3);
   addSpan(state.hEdges, "h", 1, 0, 1);
@@ -85,10 +91,10 @@ export function createSample() {
   addSpan(state.windowEdges, "h", 0, 0, 3);
   addSpan(state.windowEdges, "h", 2, 0, 3);
   state.doors = [
-    { id: "d1", dir: "v", line: 1, anchor: 0, local: 1.7, hinge: "low", side: 1 },
-    { id: "d2", dir: "v", line: 1, anchor: 1, local: 0.9, hinge: "low", side: 1 },
-    { id: "d3", dir: "h", line: 1, anchor: 0, local: 1.3, hinge: "low", side: -1 },
-    { id: "d4", dir: "v", line: 2, anchor: 1, local: 1.0, hinge: "low", side: -1 },
+    { id: "d1", dir: "v", line: 1, anchor: 0, local: 1700, hinge: "low", side: 1 },
+    { id: "d2", dir: "v", line: 1, anchor: 1, local: 900, hinge: "low", side: 1 },
+    { id: "d3", dir: "h", line: 1, anchor: 0, local: 1300, hinge: "low", side: -1 },
+    { id: "d4", dir: "v", line: 2, anchor: 1, local: 1000, hinge: "low", side: -1 },
   ];
   state.labels = [
     { id: "l1", text: "厨房", cells: ["0,0"] },
@@ -102,7 +108,7 @@ export function createSample() {
 
 export function serialize(state) {
   return JSON.stringify({
-    v: 1,
+    v: 2,
     xIntervals: state.xIntervals,
     yIntervals: state.yIntervals,
     hEdges: [...state.hEdges].sort(),
@@ -118,15 +124,26 @@ export function serialize(state) {
   });
 }
 
+function lengthsFromSave(values, legacy) {
+  return (Array.isArray(values) ? values : []).map((value) => {
+    const number = Number(value);
+    return legacy ? Math.round(number * 1000) : number;
+  });
+}
+
 export function deserialize(raw) {
   const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+  const legacy = !(Number(data.v) >= 2);
   const state = emptyState();
-  state.xIntervals = data.xIntervals;
-  state.yIntervals = data.yIntervals;
+  state.xIntervals = lengthsFromSave(data.xIntervals, legacy);
+  state.yIntervals = lengthsFromSave(data.yIntervals, legacy);
   state.hEdges = new Set(data.hEdges || []);
   state.vEdges = new Set(data.vEdges || []);
   state.windowEdges = new Set(data.windowEdges || []);
-  state.doors = (data.doors || []).map((door) => ({ ...door }));
+  state.doors = (data.doors || []).map((door) => ({
+    ...door,
+    local: legacy ? Math.round(Number(door.local) * 1000) : Number(door.local),
+  }));
   state.labels = (data.labels || []).map((label) => ({
     ...label,
     cells: [...label.cells],
@@ -154,7 +171,7 @@ export function setIntervalValue(state, axis, index, value) {
   if (next == null) {
     return {
       ok: false,
-      message: `间隔需要在 ${MIN_INTERVAL} m 到 ${MAX_INTERVAL} m 之间`,
+      message: `间隔需要在 ${MIN_INTERVAL} mm 到 ${MAX_INTERVAL} mm 之间`,
     };
   }
   if (list[index] === next) return { ok: true, changed: false };
@@ -162,7 +179,7 @@ export function setIntervalValue(state, axis, index, value) {
   return { ok: true, changed: true };
 }
 
-export function addInterval(state, axis, value = 3) {
+export function addInterval(state, axis, value = 3000) {
   const list = intervalList(state, axis);
   if (list.length >= MAX_INTERVALS) {
     return { ok: false, message: `最多 ${MAX_INTERVALS} 段间隔` };
@@ -171,11 +188,136 @@ export function addInterval(state, axis, value = 3) {
   if (next == null) {
     return {
       ok: false,
-      message: `间隔需要在 ${MIN_INTERVAL} m 到 ${MAX_INTERVAL} m 之间`,
+      message: `间隔需要在 ${MIN_INTERVAL} mm 到 ${MAX_INTERVAL} mm 之间`,
     };
   }
   list.push(next);
   return { ok: true };
+}
+
+export function reorderInterval(state, axis, from, to) {
+  const list = intervalList(state, axis);
+  if (
+    !Number.isInteger(from) ||
+    !Number.isInteger(to) ||
+    from < 0 ||
+    to < 0 ||
+    from >= list.length ||
+    to >= list.length
+  ) {
+    return { ok: false, message: "找不到这段间隔" };
+  }
+  if (from === to) return { ok: true, changed: false };
+  const [value] = list.splice(from, 1);
+  list.splice(to, 0, value);
+  return { ok: true, changed: true };
+}
+
+export function settleSequences(state, axis, sequences) {
+  if (!Array.isArray(sequences) || sequences.length < 1 || sequences.length > MAX_SEQUENCES) {
+    return { ok: false, message: `序列数量需要在 1 到 ${MAX_SEQUENCES} 之间` };
+  }
+  const cleaned = [];
+  for (const sequence of sequences) {
+    if (!Array.isArray(sequence) || sequence.length < 1 || sequence.length > MAX_INTERVALS) {
+      return { ok: false, message: `每条序列需要 1 到 ${MAX_INTERVALS} 段间隔` };
+    }
+    const values = [];
+    for (const value of sequence) {
+      const next = parseInterval(value);
+      if (next == null) {
+        return {
+          ok: false,
+          message: `间隔需要在 ${MIN_INTERVAL} mm 到 ${MAX_INTERVAL} mm 之间`,
+        };
+      }
+      values.push(next);
+    }
+    cleaned.push(values);
+  }
+  const intervals = mergeSequences(cleaned);
+  if (intervals.length > MAX_SETTLED) {
+    return { ok: false, message: `交叉后有 ${intervals.length} 段，超过 ${MAX_SETTLED} 段` };
+  }
+  const list = intervalList(state, axis);
+  if (list.length === intervals.length && intervals.every((value, index) => value === list[index])) {
+    return { ok: true, changed: false, intervals };
+  }
+  const oldX = prefixSums(state.xIntervals);
+  const oldY = prefixSums(state.yIntervals);
+  list.splice(0, list.length, ...intervals);
+  const { x: newX, y: newY } = positionsOf(state);
+  state.hEdges = retargetEdges(state.hEdges, oldX, oldY, newX, newY);
+  state.vEdges = retargetEdges(state.vEdges, oldX, oldY, newX, newY);
+  state.windowEdges = retargetEdges(state.windowEdges, oldX, oldY, newX, newY);
+  state.doors = retargetDoors(state.doors, oldX, oldY, newX, newY);
+  state.labels = retargetLabelCells(state.labels, oldX, oldY, newX, newY);
+  return { ok: true, changed: true, intervals };
+}
+
+function retargetEdges(edges, oldX, oldY, newX, newY) {
+  const next = new Set();
+  for (const dir of ["h", "v"]) {
+    const oldAlong = dir === "h" ? oldX : oldY;
+    const oldCross = dir === "h" ? oldY : oldX;
+    const newAlong = dir === "h" ? newX : newY;
+    const newCross = dir === "h" ? newY : newX;
+    for (const run of computeRuns(edges, dir)) {
+      if (run.line < 0 || run.line >= oldCross.length) continue;
+      const newLine = meterIndex(newCross, oldCross[run.line]);
+      if (newLine < 0) continue;
+      const start = oldAlong[run.start];
+      const end = oldAlong[run.end];
+      for (let index = 0; index < newAlong.length - 1; index += 1) {
+        const mid = (newAlong[index] + newAlong[index + 1]) / 2;
+        if (mid > start + 1e-6 && mid < end - 1e-6) next.add(edgeKey(dir, newLine, index));
+      }
+    }
+  }
+  return next;
+}
+
+function retargetDoors(doors, oldX, oldY, newX, newY) {
+  const next = [];
+  for (const door of doors) {
+    const oldAlong = door.dir === "h" ? oldX : oldY;
+    const oldCross = door.dir === "h" ? oldY : oldX;
+    const newAlong = door.dir === "h" ? newX : newY;
+    const newCross = door.dir === "h" ? newY : newX;
+    if (door.line < 0 || door.line >= oldCross.length) continue;
+    const newLine = meterIndex(newCross, oldCross[door.line]);
+    if (newLine < 0) continue;
+    const meter = oldAlong[door.anchor] + door.local;
+    if (meter < -1e-6 || meter > newAlong[newAlong.length - 1] + 1e-6) continue;
+    next.push({ ...door, line: newLine, ...anchorFromMeter(newAlong, meter) });
+  }
+  return next;
+}
+
+function retargetLabelCells(labels, oldX, oldY, newX, newY) {
+  const next = [];
+  for (const label of labels) {
+    const cells = new Set();
+    for (const key of label.cells) {
+      const [column, row] = key.split(",").map(Number);
+      if (column < 0 || row < 0 || column + 1 >= oldX.length || row + 1 >= oldY.length) continue;
+      const x0 = oldX[column];
+      const x1 = oldX[column + 1];
+      const y0 = oldY[row];
+      const y1 = oldY[row + 1];
+      for (let nextColumn = 0; nextColumn < newX.length - 1; nextColumn += 1) {
+        const midX = (newX[nextColumn] + newX[nextColumn + 1]) / 2;
+        if (midX <= x0 + 1e-6 || midX >= x1 - 1e-6) continue;
+        for (let nextRow = 0; nextRow < newY.length - 1; nextRow += 1) {
+          const midY = (newY[nextRow] + newY[nextRow + 1]) / 2;
+          if (midY <= y0 + 1e-6 || midY >= y1 - 1e-6) continue;
+          cells.add(`${nextColumn},${nextRow}`);
+        }
+      }
+    }
+    if (cells.size > 0) next.push({ ...label, cells: [...cells] });
+  }
+  return next;
 }
 
 export function removeIntervalAt(state, axis, index) {
@@ -256,7 +398,7 @@ export function placeDoor(state, run, centerMeter) {
   const runStart = positions[run.start];
   const runEnd = positions[run.end];
   if (runEnd - runStart < DOOR_WIDTH - 1e-6) {
-    return { ok: false, message: "这面墙不到 1 米，放不下一扇门" };
+    return { ok: false, message: `这面墙不到 ${DOOR_WIDTH} mm，放不下一扇门` };
   }
   const requested = Math.min(
     Math.max(centerMeter - DOOR_WIDTH / 2, runStart),
@@ -273,7 +415,7 @@ export function placeDoor(state, run, centerMeter) {
   const fitted = fitDoor(draft, edgesFor(state, run.dir), positions, state.doors);
   if (!fitted) return { ok: false, message: "这个位置放不下一扇门" };
   const fittedStart = positions[fitted.anchor] + fitted.local;
-  if (Math.abs(fittedStart - requested) > 0.25) {
+  if (Math.abs(fittedStart - requested) > 250) {
     return { ok: false, message: "这里与已有的门太近" };
   }
   state.nextId += 1;

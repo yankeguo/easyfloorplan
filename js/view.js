@@ -14,7 +14,7 @@ export function screenToWorld(x, y, view) {
   };
 }
 
-export function zoomAt(view, sx, sy, factor, minPpm = 8, maxPpm = 420) {
+export function zoomAt(view, sx, sy, factor, minPpm = 0.008, maxPpm = 0.42) {
   const ppm = clamp(view.ppm * factor, minPpm, maxPpm);
   const scale = ppm / view.ppm;
   return {
@@ -25,8 +25,8 @@ export function zoomAt(view, sx, sy, factor, minPpm = 8, maxPpm = 420) {
 }
 
 export function fitView(width, height, worldWidth, worldHeight) {
-  const safeWidth = Math.max(worldWidth, 0.1);
-  const safeHeight = Math.max(worldHeight, 0.1);
+  const safeWidth = Math.max(worldWidth, 100);
+  const safeHeight = Math.max(worldHeight, 100);
   const padLeft = 96;
   const padRight = 84;
   const padTop = 72;

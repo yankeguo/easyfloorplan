@@ -11,6 +11,7 @@ import {
   fitDoor,
   gridSpan,
   normalizeDoors,
+  mergeSequences,
   prefixSums,
   rebindLabels,
   remapDoors,
@@ -23,7 +24,9 @@ import { cellInnerRect, spaceNetArea } from "./geometry.js";
 import { fitView, worldToScreen, zoomAt } from "./view.js";
 
 test("prefix sums and axis names", () => {
-  assert.deepEqual(prefixSums([3.6, 3, 2.4]), [0, 3.6, 6.6, 9]);
+  assert.deepEqual(prefixSums([3600, 3000, 2400]), [0, 3600, 6600, 9000]);
+  assert.deepEqual(mergeSequences([[3900, 3300, 2700], [6000, 3900]]), [3900, 2100, 1200, 2700]);
+  assert.deepEqual(mergeSequences([[4000, 4000], [3000, 3000, 3000]]), [3000, 1000, 2000, 2000, 1000]);
   assert.equal(yAxisName(0), "A");
   assert.equal(yAxisName(25), "Z");
   assert.equal(yAxisName(26), "AA");
@@ -55,29 +58,29 @@ test("collinear edges merge into one wall and a gap splits them", () => {
 
 test("span coverage follows wall edges", () => {
   const edges = new Set(["h:0:0", "h:0:1"]);
-  const positions = [0, 2, 5];
-  assert.equal(spanCovered("h", 0, 0.5, 1.5, edges, positions), true);
-  assert.equal(spanCovered("h", 0, 1.5, 2.5, edges, positions), true);
+  const positions = [0, 2000, 5000];
+  assert.equal(spanCovered("h", 0, 500, 1500, edges, positions), true);
+  assert.equal(spanCovered("h", 0, 1500, 2500, edges, positions), true);
   edges.delete("h:0:1");
-  assert.equal(spanCovered("h", 0, 1.5, 2.5, edges, positions), false);
-  assert.equal(spanCovered("h", 0, 0.2, 1.2, edges, positions), true);
+  assert.equal(spanCovered("h", 0, 1500, 2500, edges, positions), false);
+  assert.equal(spanCovered("h", 0, 200, 1200, edges, positions), true);
 });
 
 test("a door stays on its bay when that bay shrinks", () => {
   const edges = new Set(["h:0:0", "h:0:1"]);
-  const door = { id: "d", dir: "h", line: 0, anchor: 0, local: 2.5, hinge: "low", side: 1 };
-  const fitted = fitDoor(door, edges, [0, 2, 5], []);
+  const door = { id: "d", dir: "h", line: 0, anchor: 0, local: 2500, hinge: "low", side: 1 };
+  const fitted = fitDoor(door, edges, [0, 2000, 5000], []);
   assert.ok(fitted);
-  const [start, end] = doorSpanMeters(fitted, [0, 2, 5]);
+  const [start, end] = doorSpanMeters(fitted, [0, 2000, 5000]);
   assert.ok(start >= -1e-9);
-  assert.ok(end <= 5 + 1e-9);
+  assert.ok(end <= 5000 + 1e-9);
   assert.ok(Math.abs(end - start - DOOR_WIDTH) < 1e-9);
-  assert.equal(fitDoor(door, edges, [0, 0.4], []), null);
+  assert.equal(fitDoor(door, edges, [0, 400], []), null);
 });
 
 test("doors may touch but may not overlap", () => {
   const edges = new Set(["v:1:0"]);
-  const positions = [0, 4];
+  const positions = [0, 4000];
   const first = fitDoor(
     { id: "a", dir: "v", line: 1, anchor: 0, local: 0, hinge: "low", side: 1 },
     edges,
@@ -85,71 +88,71 @@ test("doors may touch but may not overlap", () => {
     [],
   );
   const second = fitDoor(
-    { id: "b", dir: "v", line: 1, anchor: 0, local: 1, hinge: "low", side: 1 },
+    { id: "b", dir: "v", line: 1, anchor: 0, local: 1000, hinge: "low", side: 1 },
     edges,
     positions,
     [first],
   );
-  assert.equal(positions[second.anchor] + second.local, 1);
+  assert.equal(positions[second.anchor] + second.local, 1000);
   const blocked = fitDoor(
-    { id: "c", dir: "v", line: 1, anchor: 0, local: 0.4, hinge: "low", side: 1 },
+    { id: "c", dir: "v", line: 1, anchor: 0, local: 400, hinge: "low", side: 1 },
     edges,
     positions,
     [first],
   );
   const blockedStart = positions[blocked.anchor] + blocked.local;
-  assert.ok(blockedStart >= 0.99);
-  assert.ok(blockedStart < 1.2);
+  assert.ok(blockedStart >= 990);
+  assert.ok(blockedStart < 1200);
 });
 
-test("door leaf is one meter long and opens to the chosen side", () => {
+test("door leaf is 1000 mm long and opens to the chosen side", () => {
   const horizontal = doorGeometry(
-    { dir: "h", line: 0, anchor: 0, local: 0.5, hinge: "low", side: 1 },
-    [0, 4],
-    [0, 3],
+    { dir: "h", line: 0, anchor: 0, local: 500, hinge: "low", side: 1 },
+    [0, 4000],
+    [0, 3000],
   );
-  assert.ok(Math.abs(horizontal.hinge.x - 0.5) < 1e-9);
+  assert.ok(Math.abs(horizontal.hinge.x - 500) < 1e-9);
   assert.equal(horizontal.hinge.y, 0);
-  assert.ok(Math.abs(horizontal.leaf.x - 0.5) < 1e-9);
-  assert.ok(Math.abs(horizontal.leaf.y - 1) < 1e-9);
-  assert.ok(Math.abs(horizontal.closed.x - 1.5) < 1e-9);
+  assert.ok(Math.abs(horizontal.leaf.x - 500) < 1e-9);
+  assert.ok(Math.abs(horizontal.leaf.y - 1000) < 1e-9);
+  assert.ok(Math.abs(horizontal.closed.x - 1500) < 1e-9);
 
   const vertical = doorGeometry(
     { dir: "v", line: 1, anchor: 0, local: 0, hinge: "high", side: -1 },
-    [0, 4],
-    [0, 3],
+    [0, 4000],
+    [0, 3000],
   );
-  assert.deepEqual(vertical.hinge, { x: 4, y: 1 });
-  assert.deepEqual(vertical.leaf, { x: 3, y: 1 });
-  assert.deepEqual(vertical.closed, { x: 4, y: 0 });
+  assert.deepEqual(vertical.hinge, { x: 4000, y: 1000 });
+  assert.deepEqual(vertical.leaf, { x: 3000, y: 1000 });
+  assert.deepEqual(vertical.closed, { x: 4000, y: 0 });
 });
 
 test("normalize is stable", () => {
   const edges = new Set(["h:0:0", "h:0:1"]);
-  const xPos = [0, 3, 6.5];
+  const xPos = [0, 3000, 6500];
   const doors = [
-    { id: "d", dir: "h", line: 0, anchor: 0, local: 0.4, hinge: "high", side: -1 },
+    { id: "d", dir: "h", line: 0, anchor: 0, local: 400, hinge: "high", side: -1 },
   ];
-  const once = normalizeDoors(doors, edges, new Set(), xPos, [0, 1]);
-  const twice = normalizeDoors(once, edges, new Set(), xPos, [0, 1]);
+  const once = normalizeDoors(doors, edges, new Set(), xPos, [0, 1000]);
+  const twice = normalizeDoors(once, edges, new Set(), xPos, [0, 1000]);
   assert.deepEqual(twice, once);
 });
 
 test("removing a bay remaps walls, doors and labels", () => {
   const hEdges = new Set(["h:0:0", "h:0:1", "h:0:2"]);
   const vEdges = new Set(["v:2:0", "v:3:0"]);
-  const oldPositions = prefixSums([3, 4, 5]);
+  const oldPositions = prefixSums([3000, 4000, 5000]);
   const nextH = remapEdgeSet(hEdges, "x", 1);
   const nextV = remapEdgeSet(vEdges, "x", 1);
   assert.deepEqual([...nextH].sort(), ["h:0:0", "h:0:1"]);
   assert.deepEqual([...nextV].sort(), ["v:2:0"]);
-  const newPositions = prefixSums([3, 5]);
+  const newPositions = prefixSums([3000, 5000]);
   const doors = remapDoors(
     [
-      { id: "keep", dir: "h", line: 0, anchor: 2, local: 1.5, hinge: "low", side: 1 },
-      { id: "drop", dir: "h", line: 0, anchor: 1, local: 1, hinge: "low", side: 1 },
-      { id: "line", dir: "v", line: 3, anchor: 0, local: 0.2, hinge: "low", side: 1 },
-      { id: "gone", dir: "v", line: 2, anchor: 0, local: 0.2, hinge: "low", side: 1 },
+      { id: "keep", dir: "h", line: 0, anchor: 2, local: 1500, hinge: "low", side: 1 },
+      { id: "drop", dir: "h", line: 0, anchor: 1, local: 1000, hinge: "low", side: 1 },
+      { id: "line", dir: "v", line: 3, anchor: 0, local: 200, hinge: "low", side: 1 },
+      { id: "gone", dir: "v", line: 2, anchor: 0, local: 200, hinge: "low", side: 1 },
     ],
     "x",
     1,
@@ -160,7 +163,7 @@ test("removing a bay remaps walls, doors and labels", () => {
   assert.equal(byId.drop, undefined);
   assert.equal(byId.gone, undefined);
   assert.equal(byId.line.line, 2);
-  assert.equal(newPositions[byId.keep.anchor] + byId.keep.local, 4.5);
+  assert.equal(newPositions[byId.keep.anchor] + byId.keep.local, 4500);
   const labels = remapLabelCells(
     [{ id: "l", text: "厅", cells: ["0,0", "1,0", "2,1"] }],
     "x",
@@ -170,24 +173,24 @@ test("removing a bay remaps walls, doors and labels", () => {
 });
 
 test("anchor lands on the bay that contains the meter", () => {
-  const positions = [0, 3, 6, 10];
-  assert.deepEqual(anchorFromMeter(positions, 3), { anchor: 1, local: 0 });
-  assert.deepEqual(anchorFromMeter(positions, 2.5), { anchor: 0, local: 2.5 });
-  assert.deepEqual(anchorFromMeter(positions, 10), { anchor: 2, local: 4 });
+  const positions = [0, 3000, 6000, 10000];
+  assert.deepEqual(anchorFromMeter(positions, 3000), { anchor: 1, local: 0 });
+  assert.deepEqual(anchorFromMeter(positions, 2500), { anchor: 0, local: 2500 });
+  assert.deepEqual(anchorFromMeter(positions, 10000), { anchor: 2, local: 4000 });
 });
 
 test("zoom keeps the cursor point fixed", () => {
   const view = { ox: 100, oy: 200, ppm: 10 };
-  const zoomed = zoomAt(view, 150, 80, 2);
+  const zoomed = zoomAt(view, 150, 80, 2, 1, 1000);
   assert.equal(zoomed.ppm, 20);
   assert.equal(worldToScreen(5, 12, zoomed).x, 150);
   assert.equal(worldToScreen(5, 12, zoomed).y, 80);
 });
 
 test("fit view places the plan inside the padding", () => {
-  const view = fitView(800, 600, 10, 8);
-  const top = worldToScreen(0, 8, view);
-  const bottom = worldToScreen(10, 0, view);
+  const view = fitView(800, 600, 10000, 8000);
+  const top = worldToScreen(0, 8000, view);
+  const bottom = worldToScreen(10000, 0, view);
   assert.ok(top.y >= 72 - 0.01);
   assert.ok(bottom.y <= 600 - 96 + 0.01);
   assert.ok(worldToScreen(0, 0, view).x >= 96 - 0.01);
@@ -203,12 +206,12 @@ test("room cells stay split by a wall even when the wall has a door", () => {
   addSpan(vEdges, "v", 1, 0, 1);
   const spaces = computeSpaces(2, 1, hEdges, vEdges);
   assert.equal(spaces.length, 2);
-  const xPos = [0, 3, 6];
-  const yPos = [0, 4];
+  const xPos = [0, 3000, 6000];
+  const yPos = [0, 4000];
   const kitchen = spaces.find((space) => space.key === "0,0");
   const rect = cellInnerRect(0, 0, xPos, yPos, hEdges, vEdges);
-  assert.ok(Math.abs(spaceNetArea(kitchen, xPos, yPos, hEdges, vEdges) - (3 - 0.12) * (4 - 0.12)) < 1e-9);
-  assert.ok(rect.x1 - rect.x0 < 3);
+  assert.equal(spaceNetArea(kitchen, xPos, yPos, hEdges, vEdges), (3000 - 120) * (4000 - 120));
+  assert.ok(rect.x1 - rect.x0 < 3000);
 });
 
 test("a label follows the space with the larger overlap", () => {

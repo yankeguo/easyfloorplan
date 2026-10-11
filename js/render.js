@@ -4,7 +4,7 @@ import {
   cellInnerRect,
   doorGeometry,
   doorSpanMeters,
-  formatMeters,
+  formatMm,
   labelAnchor,
   runIsWindow,
   runKey,
@@ -137,13 +137,13 @@ function drawDimensions(ctx, view, xPos, yPos) {
   }
 
   for (let index = 0; index < xPos.length - 1; index += 1) {
-    hChain(rowY, xPos[index], xPos[index + 1], `${formatMeters(xPos[index + 1] - xPos[index])} m`);
+    hChain(rowY, xPos[index], xPos[index + 1], `${formatMm(xPos[index + 1] - xPos[index])} mm`);
   }
   for (let index = 0; index < yPos.length - 1; index += 1) {
-    vChain(rowX, yPos[index], yPos[index + 1], `${formatMeters(yPos[index + 1] - yPos[index])} m`);
+    vChain(rowX, yPos[index], yPos[index + 1], `${formatMm(yPos[index + 1] - yPos[index])} mm`);
   }
-  if (xPos.length > 2) hChain(totalY, xPos[0], xPos[xPos.length - 1], `${formatMeters(xPos[xPos.length - 1])} m`);
-  if (yPos.length > 2) vChain(totalX, yPos[0], yPos[yPos.length - 1], `${formatMeters(yPos[yPos.length - 1])} m`);
+  if (xPos.length > 2) hChain(totalY, xPos[0], xPos[xPos.length - 1], `${formatMm(xPos[xPos.length - 1])} mm`);
+  if (yPos.length > 2) vChain(totalX, yPos[0], yPos[yPos.length - 1], `${formatMm(yPos[yPos.length - 1])} mm`);
   ctx.restore();
 }
 
@@ -236,7 +236,7 @@ function nearDoor(doors, dir, line, meter, positions) {
   for (const door of doors) {
     if (door.dir !== dir || door.line !== line) continue;
     const [start, end] = doorSpanMeters(door, positions);
-    if (meter > start - reach - 1e-4 && meter < end + reach + 1e-4) return true;
+    if (meter > start - reach - 0.1 && meter < end + reach + 0.1) return true;
   }
   return false;
 }
@@ -255,17 +255,17 @@ function drawWindows(ctx, view, state, xPos, yPos) {
     }
     if (!best) continue;
     const length = best[1] - best[0];
-    const symbol = Math.min(1.6, length - 0.24);
+    const symbol = Math.min(1600, length - 240);
     const mid = (best[0] + best[1]) / 2;
-    if (symbol >= 0.36) {
+    if (symbol >= 360) {
       const from = mid - symbol / 2;
       const to = mid + symbol / 2;
-      fillBand(ctx, view, run.dir, cross, from, to, 0.05, "#f7f4ee", 0);
+      fillBand(ctx, view, run.dir, cross, from, to, 50, "#f7f4ee", 0);
       ctx.save();
       ctx.strokeStyle = WINDOW;
-      ctx.lineWidth = Math.max(1, view.ppm * 0.012);
-      const inset = Math.min(0.06, symbol * 0.08);
-      for (const offset of [-0.018, 0.018]) {
+      ctx.lineWidth = Math.max(1, view.ppm * 12);
+      const inset = Math.min(60, symbol * 0.08);
+      for (const offset of [-18, 18]) {
         const p0 =
           run.dir === "h"
             ? worldToScreen(from + inset, cross + offset, view)
@@ -282,7 +282,7 @@ function drawWindows(ctx, view, state, xPos, yPos) {
       ctx.restore();
     }
     const side = exteriorSide(run, columns, rows);
-    const offset = WALL_THICKNESS / 2 + 0.28;
+    const offset = WALL_THICKNESS / 2 + 280;
     const point =
       run.dir === "h"
         ? worldToScreen(mid, cross + side * offset, view)
@@ -395,16 +395,16 @@ function drawPreview(ctx, view, preview, xPos, yPos) {
   const point =
     preview.dir === "h" ? worldToScreen(mid, cross, view) : worldToScreen(cross, mid, view);
   const length = positions[preview.end] - positions[preview.start];
-  chipText(ctx, `${formatMeters(length)} m`, point.x, point.y - 16);
+  chipText(ctx, `${formatMm(length)} mm`, point.x, point.y - 16);
 }
 
 function drawScaleBar(ctx, x, y, ppm) {
-  const choices = [0.5, 1, 2, 5, 10, 20];
-  let meters = choices[0];
+  const choices = [500, 1000, 2000, 5000, 10000, 20000];
+  let length = choices[0];
   for (const choice of choices) {
-    if (choice * ppm <= 150) meters = choice;
+    if (choice * ppm <= 150) length = choice;
   }
-  const width = meters * ppm;
+  const width = length * ppm;
   if (width < 24) return;
   ctx.save();
   ctx.fillStyle = "rgba(247, 244, 238, 0.92)";
@@ -423,7 +423,7 @@ function drawScaleBar(ctx, x, y, ppm) {
   ctx.font = `12px ${SANS}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
-  ctx.fillText(`${formatMeters(meters)} m`, x + width / 2, y - 6);
+  ctx.fillText(`${formatMm(length)} mm`, x + width / 2, y - 6);
   ctx.restore();
 }
 
@@ -480,7 +480,7 @@ export function drawScene(ctx, width, height, scene) {
     const positions = run.dir === "h" ? xPos : yPos;
     const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
     for (const [start, end] of solidPieces(run, state.doors, positions)) {
-      fillBand(ctx, view, run.dir, cross, start, end, WALL_THICKNESS + 0.08, TEAL, 0);
+      fillBand(ctx, view, run.dir, cross, start, end, WALL_THICKNESS + 80, TEAL, 0);
     }
   }
 
