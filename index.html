@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>易户型</title>
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <div>
+            <strong>易户型</strong>
+            <em>参考线生成墙体</em>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="undo" type="button">撤销</button>
+          <button id="redo" type="button">重做</button>
+          <button id="fit" type="button">适配</button>
+          <button id="export" type="button" class="primary">导出 PNG</button>
+        </div>
+      </header>
+      <div class="workspace">
+        <aside id="sidebar">
+          <ol class="steps">
+            <li>填写横向、纵向间隔，生成参考线。</li>
+            <li>只在交叉点之间连墙，墙厚 12 cm。</li>
+            <li>在墙上开门、标出有窗的墙，再给空间命名。</li>
+          </ol>
+          <section id="panel-x"></section>
+          <section id="panel-y"></section>
+          <section id="readout"></section>
+          <section id="selection"></section>
+          <p class="rules">墙以参考线为中心，厚度固定 12 cm。门洞宽度固定 1 m，不能把点放在交叉点之外。</p>
+          <div class="footer-actions">
+            <button id="sample" type="button">载入示例</button>
+            <button id="clear" type="button">清空墙体</button>
+          </div>
+        </aside>
+        <section class="board">
+          <div class="toolbar" id="toolbar">
+            <button type="button" class="tool" data-tool="select" aria-pressed="true" title="选择 (V)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4l6.2 15 2.1-6.2L19.5 11z"/></svg>
+              <span>选择</span><kbd>V</kbd>
+            </button>
+            <button type="button" class="tool" data-tool="wall" title="画墙 (W)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M4 8v8M20 8v8"/></svg>
+              <span>画墙</span><kbd>W</kbd>
+            </button>
+            <button type="button" class="tool" data-tool="erase" title="擦除 (E)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h6M14 12h6M9 9l3 6"/></svg>
+              <span>擦除</span><kbd>E</kbd>
+            </button>
+            <button type="button" class="tool" data-tool="door" title="门 (D)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 19V6h3M10 6a8 8 0 0 1 0 13"/></svg>
+              <span>门</span><kbd>D</kbd>
+            </button>
+            <button type="button" class="tool" data-tool="window" title="窗 (N)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="10"/><path d="M4 12h16M12 7v10"/></svg>
+              <span>窗</span><kbd>N</kbd>
+            </button>
+            <button type="button" class="tool" data-tool="label" title="标签 (L)">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h11l5 4-5 4H4z"/></svg>
+              <span>标签</span><kbd>L</kbd>
+            </button>
+            <div id="toast" role="status"></div>
+          </div>
+          <div class="stage" id="stage">
+            <canvas id="plan" aria-label="户型图画布"></canvas>
+            <input id="label-editor" maxlength="20" autocomplete="off" aria-label="空间标签" list="room-names" placeholder="例如：客厅" />
+            <datalist id="room-names">
+              <option value="客厅"></option>
+              <option value="餐厅"></option>
+              <option value="卧室"></option>
+              <option value="主卧"></option>
+              <option value="次卧"></option>
+              <option value="书房"></option>
+              <option value="厨房"></option>
+              <option value="卫生间"></option>
+              <option value="阳台"></option>
+              <option value="玄关"></option>
+            </datalist>
+            <div id="hint"></div>
+            <div id="status"></div>
+            <p id="boot">正在打开户型图。若一直停在这里，请通过本地服务器访问，不要直接双击文件。</p>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
