@@ -24,9 +24,10 @@ import {
   removeSpan,
   roundMm,
   runIsWindow,
-} from "./geometry.js";
+} from "./geometry.ts";
+import type { ActionResult, Axis, Door, GridPoint, Label, PlanState, Run, Space } from "./types.ts";
 
-export function emptyState() {
+export function emptyState(): PlanState {
   return {
     xIntervals: [4200, 3600],
     yIntervals: [3600, 3000],
@@ -39,14 +40,14 @@ export function emptyState() {
   };
 }
 
-export function positionsOf(state) {
+export function positionsOf(state: PlanState): { x: number[]; y: number[] } {
   return {
     x: prefixSums(state.xIntervals),
     y: prefixSums(state.yIntervals),
   };
 }
 
-export function spacesOf(state) {
+export function spacesOf(state: PlanState): Space[] {
   return computeSpaces(
     state.xIntervals.length,
     state.yIntervals.length,
@@ -55,11 +56,11 @@ export function spacesOf(state) {
   );
 }
 
-export function runsOf(state) {
+export function runsOf(state: PlanState): Run[] {
   return [...computeRuns(state.hEdges, "h"), ...computeRuns(state.vEdges, "v")];
 }
 
-export function normalize(state) {
+export function normalize(state: PlanState): PlanState {
   if (state.xIntervals.length < 1) state.xIntervals = [3000];
   if (state.yIntervals.length < 1) state.yIntervals = [3000];
   state.xIntervals = state.xIntervals.map((value) => roundMm(value));
@@ -76,7 +77,7 @@ export function normalize(state) {
   return state;
 }
 
-export function createSample() {
+export function createSample(): PlanState {
   const state = emptyState();
   state.xIntervals = [3900, 3300, 2700];
   state.yIntervals = [4800, 3000];
@@ -106,7 +107,7 @@ export function createSample() {
   return normalize(state);
 }
 
-export function serialize(state) {
+export function serialize(state: PlanState): string {
   return JSON.stringify({
     v: 2,
     xIntervals: state.xIntervals,
@@ -124,15 +125,15 @@ export function serialize(state) {
   });
 }
 
-function lengthsFromSave(values, legacy) {
+function lengthsFromSave(values: unknown, legacy: boolean): number[] {
   return (Array.isArray(values) ? values : []).map((value) => {
     const number = Number(value);
     return legacy ? Math.round(number * 1000) : number;
   });
 }
 
-export function deserialize(raw) {
-  const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+export function deserialize(raw: string | SavedPlan): PlanState {
+  const data = typeof raw === "string" ? (JSON.parse(raw) as SavedPlan) : raw;
   const legacy = !(Number(data.v) >= 2);
   const state = emptyState();
   state.xIntervals = lengthsFromSave(data.xIntervals, legacy);
@@ -143,7 +144,7 @@ export function deserialize(raw) {
   state.doors = (data.doors || []).map((door) => ({
     ...door,
     local: legacy ? Math.round(Number(door.local) * 1000) : Number(door.local),
-  }));
+  })) as Door[];
   state.labels = (data.labels || []).map((label) => ({
     ...label,
     cells: [...label.cells],
@@ -152,11 +153,33 @@ export function deserialize(raw) {
   return normalize(state);
 }
 
-function intervalList(state, axis) {
+interface SavedDoor {
+  id: string;
+  dir: string;
+  line: number;
+  anchor: number;
+  local: number;
+  hinge: string;
+  side: number;
+}
+
+interface SavedPlan {
+  v?: number;
+  xIntervals?: unknown;
+  yIntervals?: unknown;
+  hEdges?: string[];
+  vEdges?: string[];
+  windowEdges?: string[];
+  doors?: SavedDoor[];
+  labels?: Label[];
+  nextId?: number;
+}
+
+function intervalList(state: PlanState, axis: Axis): number[] {
   return axis === "x" ? state.xIntervals : state.yIntervals;
 }
 
-function parseInterval(value) {
+function parseInterval(value: unknown): number | null {
   const number = typeof value === "number" ? value : Number(String(value).trim());
   if (!Number.isFinite(number)) return null;
   const rounded = roundMm(number);
@@ -164,7 +187,7 @@ function parseInterval(value) {
   return rounded;
 }
 
-export function setIntervalValue(state, axis, index, value) {
+export function setIntervalValue(state: PlanState, axis: Axis, index: number, value: unknown): ActionResult {
   const list = intervalList(state, axis);
   if (index < 0 || index >= list.length) return { ok: false, message: "找不到这段间隔" };
   const next = parseInterval(value);
@@ -179,7 +202,7 @@ export function setIntervalValue(state, axis, index, value) {
   return { ok: true, changed: true };
 }
 
-export function addInterval(state, axis, value = 3000) {
+export function addInterval(state: PlanState, axis: Axis, value: unknown = 3000): ActionResult {
   const list = intervalList(state, axis);
   if (list.length >= MAX_INTERVALS) {
     return { ok: false, message: `最多 ${MAX_INTERVALS} 段间隔` };
@@ -195,7 +218,7 @@ export function addInterval(state, axis, value = 3000) {
   return { ok: true };
 }
 
-export function reorderInterval(state, axis, from, to) {
+export function reorderInterval(state: PlanState, axis: Axis, from: number, to: number): ActionResult {
   const list = intervalList(state, axis);
   if (
     !Number.isInteger(from) ||
@@ -209,20 +232,21 @@ export function reorderInterval(state, axis, from, to) {
   }
   if (from === to) return { ok: true, changed: false };
   const [value] = list.splice(from, 1);
+  if (value === undefined) return { ok: false, message: "找不到这段间隔" };
   list.splice(to, 0, value);
   return { ok: true, changed: true };
 }
 
-export function settleSequences(state, axis, sequences) {
+export function settleSequences(state: PlanState, axis: Axis, sequences: unknown): ActionResult {
   if (!Array.isArray(sequences) || sequences.length < 1 || sequences.length > MAX_SEQUENCES) {
     return { ok: false, message: `序列数量需要在 1 到 ${MAX_SEQUENCES} 之间` };
   }
-  const cleaned = [];
+  const cleaned: number[][] = [];
   for (const sequence of sequences) {
     if (!Array.isArray(sequence) || sequence.length < 1 || sequence.length > MAX_INTERVALS) {
       return { ok: false, message: `每条序列需要 1 到 ${MAX_INTERVALS} 段间隔` };
     }
-    const values = [];
+    const values: number[] = [];
     for (const value of sequence) {
       const next = parseInterval(value);
       if (next == null) {
@@ -255,9 +279,15 @@ export function settleSequences(state, axis, sequences) {
   return { ok: true, changed: true, intervals };
 }
 
-function retargetEdges(edges, oldX, oldY, newX, newY) {
-  const next = new Set();
-  for (const dir of ["h", "v"]) {
+function retargetEdges(
+  edges: ReadonlySet<string>,
+  oldX: readonly number[],
+  oldY: readonly number[],
+  newX: readonly number[],
+  newY: readonly number[],
+): Set<string> {
+  const next = new Set<string>();
+  for (const dir of ["h", "v"] as const) {
     const oldAlong = dir === "h" ? oldX : oldY;
     const oldCross = dir === "h" ? oldY : oldX;
     const newAlong = dir === "h" ? newX : newY;
@@ -277,8 +307,14 @@ function retargetEdges(edges, oldX, oldY, newX, newY) {
   return next;
 }
 
-function retargetDoors(doors, oldX, oldY, newX, newY) {
-  const next = [];
+function retargetDoors(
+  doors: readonly Door[],
+  oldX: readonly number[],
+  oldY: readonly number[],
+  newX: readonly number[],
+  newY: readonly number[],
+): Door[] {
+  const next: Door[] = [];
   for (const door of doors) {
     const oldAlong = door.dir === "h" ? oldX : oldY;
     const oldCross = door.dir === "h" ? oldY : oldX;
@@ -294,10 +330,16 @@ function retargetDoors(doors, oldX, oldY, newX, newY) {
   return next;
 }
 
-function retargetLabelCells(labels, oldX, oldY, newX, newY) {
-  const next = [];
+function retargetLabelCells(
+  labels: readonly Label[],
+  oldX: readonly number[],
+  oldY: readonly number[],
+  newX: readonly number[],
+  newY: readonly number[],
+): Label[] {
+  const next: Label[] = [];
   for (const label of labels) {
-    const cells = new Set();
+    const cells = new Set<string>();
     for (const key of label.cells) {
       const [column, row] = key.split(",").map(Number);
       if (column < 0 || row < 0 || column + 1 >= oldX.length || row + 1 >= oldY.length) continue;
@@ -320,7 +362,7 @@ function retargetLabelCells(labels, oldX, oldY, newX, newY) {
   return next;
 }
 
-export function removeIntervalAt(state, axis, index) {
+export function removeIntervalAt(state: PlanState, axis: Axis, index: number): ActionResult {
   const list = intervalList(state, axis);
   if (list.length <= 1) return { ok: false, message: "至少保留一段间隔" };
   if (index < 0 || index >= list.length) return { ok: false, message: "找不到这段间隔" };
@@ -335,7 +377,12 @@ export function removeIntervalAt(state, axis, index) {
   return { ok: true };
 }
 
-export function applyGridSpan(state, from, to, mode) {
+export function applyGridSpan(
+  state: PlanState,
+  from: GridPoint,
+  to: GridPoint,
+  mode: "add" | "erase",
+): ActionResult {
   const span = gridSpan(from, to);
   if (!span.ok) {
     return {
@@ -353,7 +400,7 @@ export function applyGridSpan(state, from, to, mode) {
   return { ok: true, span };
 }
 
-export function clearDrawing(state) {
+export function clearDrawing(state: PlanState): void {
   state.hEdges = new Set();
   state.vEdges = new Set();
   state.windowEdges = new Set();
@@ -361,16 +408,16 @@ export function clearDrawing(state) {
   state.labels = [];
 }
 
-function edgesFor(state, dir) {
+function edgesFor(state: PlanState, dir: Run["dir"]): Set<string> {
   return dir === "h" ? state.hEdges : state.vEdges;
 }
 
-function axisPositions(state, dir) {
+function axisPositions(state: PlanState, dir: Run["dir"]): number[] {
   const positions = positionsOf(state);
   return dir === "h" ? positions.x : positions.y;
 }
 
-export function toggleWindow(state, run) {
+export function toggleWindow(state: PlanState, run: Run): ActionResult {
   const turningOn = !runIsWindow(state.windowEdges, run);
   for (let index = run.start; index < run.end; index += 1) {
     const key = `${run.dir}:${run.line}:${index}`;
@@ -380,7 +427,7 @@ export function toggleWindow(state, run) {
   return { ok: true, on: turningOn };
 }
 
-function defaultDoorSide(state, run) {
+function defaultDoorSide(state: PlanState, run: Run): 1 | -1 {
   const columns = state.xIntervals.length;
   const rows = state.yIntervals.length;
   if (run.dir === "h") {
@@ -393,7 +440,7 @@ function defaultDoorSide(state, run) {
   return 1;
 }
 
-export function placeDoor(state, run, centerMeter) {
+export function placeDoor(state: PlanState, run: Run, centerMeter: number): ActionResult {
   const positions = axisPositions(state, run.dir);
   const runStart = positions[run.start];
   const runEnd = positions[run.end];
@@ -404,7 +451,7 @@ export function placeDoor(state, run, centerMeter) {
     Math.max(centerMeter - DOOR_WIDTH / 2, runStart),
     runEnd - DOOR_WIDTH,
   );
-  const draft = {
+  const draft: Door = {
     id: `d${state.nextId}`,
     dir: run.dir,
     line: run.line,
@@ -423,7 +470,7 @@ export function placeDoor(state, run, centerMeter) {
   return { ok: true, id: fitted.id };
 }
 
-export function moveDoor(state, id, startMeter) {
+export function moveDoor(state: PlanState, id: string, startMeter: number): ActionResult {
   const door = state.doors.find((item) => item.id === id);
   if (!door) return { ok: false, message: "找不到这扇门" };
   const positions = axisPositions(state, door.dir);
@@ -435,7 +482,11 @@ export function moveDoor(state, id, startMeter) {
   return { ok: true };
 }
 
-export function updateDoor(state, id, patch) {
+export function updateDoor(
+  state: PlanState,
+  id: string,
+  patch: { hinge?: string; side?: number },
+): ActionResult {
   const door = state.doors.find((item) => item.id === id);
   if (!door) return { ok: false, message: "找不到这扇门" };
   if (patch.hinge) door.hinge = patch.hinge === "high" ? "high" : "low";
@@ -443,19 +494,19 @@ export function updateDoor(state, id, patch) {
   return { ok: true };
 }
 
-export function deleteDoor(state, id) {
+export function deleteDoor(state: PlanState, id: string): ActionResult {
   const before = state.doors.length;
   state.doors = state.doors.filter((door) => door.id !== id);
   return { ok: state.doors.length !== before };
 }
 
-export function deleteRun(state, run) {
+export function deleteRun(state: PlanState, run: Run): ActionResult {
   removeSpan(edgesFor(state, run.dir), run.dir, run.line, run.start, run.end);
   removeSpan(state.windowEdges, run.dir, run.line, run.start, run.end);
   return { ok: true };
 }
 
-export function setSpaceLabel(state, space, text) {
+export function setSpaceLabel(state: PlanState, space: Space, text: string): ActionResult {
   const cells = space.cells.map((cell) => `${cell.c},${cell.r}`);
   const keys = new Set(cells);
   const trimmed = text.trim();
@@ -475,15 +526,15 @@ export function setSpaceLabel(state, space, text) {
   return { ok: true, id };
 }
 
-export function labelForSpace(state, space) {
+export function labelForSpace(state: PlanState, space: Space): Label | null {
   const keys = new Set(space.cells.map((cell) => `${cell.c},${cell.r}`));
   return state.labels.find((label) => label.cells.some((cell) => keys.has(cell))) || null;
 }
 
-export function runByKey(state, key) {
+export function runByKey(state: PlanState, key: string): Run | null {
   return runsOf(state).find((run) => `${run.dir}:${run.line}:${run.start}:${run.end}` === key) || null;
 }
 
-export function runContaining(state, dir, line, edgeIndex) {
+export function runContaining(state: PlanState, dir: Run["dir"], line: number, edgeIndex: number): Run | null {
   return findRunContainingEdge(edgesFor(state, dir), dir, line, edgeIndex);
 }

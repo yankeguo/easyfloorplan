@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { doorSpanMeters, prefixSums, runIsWindow, spaceNetArea } from "./geometry.js";
+import { test } from "bun:test";
+import { doorSpanMeters, prefixSums, runIsWindow, spaceNetArea } from "./geometry.ts";
 import {
   addInterval,
   applyGridSpan,
@@ -18,7 +18,7 @@ import {
   setSpaceLabel,
   spacesOf,
   toggleWindow,
-} from "./model.js";
+} from "./model.ts";
 
 test("sample plan has four labeled rooms, doors and window walls", () => {
   const state = createSample();
@@ -42,6 +42,7 @@ test("sample plan has four labeled rooms, doors and window walls", () => {
     assert.ok(start >= -1e-9);
   }
   const kitchen = spaces.find((space) => space.key === "0,0");
+  assert.ok(kitchen);
   const net = spaceNetArea(kitchen, x, y, state.hEdges, state.vEdges);
   assert.equal(net, 3780 * 4680);
   const again = deserialize(serialize(state));
@@ -58,6 +59,8 @@ test("drawing a wall between living-room cells splits the label onto the larger 
   assert.equal(spaces.some((space) => space.key === "1,1"), true);
   const living = spaces.find((space) => space.key === "1,0|2,0");
   const upper = spaces.find((space) => space.key === "1,1");
+  assert.ok(living);
+  assert.ok(upper);
   assert.equal(labelForSpace(state, living)?.text, "客厅");
   assert.equal(labelForSpace(state, upper), null);
 });
@@ -73,6 +76,7 @@ test("a short wall rejects a door and a diagonal connection is refused", () => {
   state.labels = [];
   normalize(state);
   const run = runByKey(state, "h:0:0:1");
+  assert.ok(run);
   const placed = placeDoor(state, run, 250);
   assert.equal(placed.ok, false);
   const diagonal = applyGridSpan(state, { xi: 0, yi: 0 }, { xi: 1, yi: 1 }, "add");
@@ -100,6 +104,7 @@ test("reordering intervals moves lengths and leaves walls on the same indices", 
   const state = createSample();
   const edges = [...state.vEdges].sort();
   const door = state.doors.find((item) => item.id === "d4");
+  assert.ok(door);
   const before = { line: door.line, anchor: door.anchor, local: door.local };
   const result = reorderInterval(state, "x", 0, 2);
   assert.equal(result.ok, true);
@@ -112,6 +117,8 @@ test("reordering intervals moves lengths and leaves walls on the same indices", 
 test("settling crossed sequences splits walls onto the finer grid", () => {
   const state = createSample();
   const same = settleSequences(state, "x", [state.xIntervals.slice()]);
+  assert.equal(same.ok, true);
+  if (!same.ok) return;
   assert.equal(same.changed, false);
   const settled = settleSequences(state, "x", [
     [3900, 3300, 2700],
@@ -127,8 +134,11 @@ test("settling crossed sequences splits walls onto the finer grid", () => {
   assert.equal(state.vEdges.has("v:1:0"), true);
   assert.equal(state.vEdges.has("v:3:1"), true);
   const shifted = state.doors.find((door) => door.id === "d4");
+  assert.ok(shifted);
   assert.equal(shifted.line, 3);
-  assert.equal(state.labels.find((label) => label.text === "次卧").cells.includes("3,1"), true);
+  const bedroom = state.labels.find((label) => label.text === "次卧");
+  assert.ok(bedroom);
+  assert.equal(bedroom.cells.includes("3,1"), true);
 });
 
 test("a continuous wall stays whole when settled cuts no longer match the old bays", () => {
@@ -173,6 +183,7 @@ test("a saved meter drawing loads once as millimeters", () => {
 test("window toggle covers the whole straight wall", () => {
   const state = createSample();
   const run = runByKey(state, "v:3:0:2");
+  assert.ok(run);
   assert.equal(runIsWindow(state.windowEdges, run), false);
   toggleWindow(state, run);
   assert.equal(runIsWindow(state.windowEdges, run), true);

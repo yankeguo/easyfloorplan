@@ -1,20 +1,21 @@
-import { clamp } from "./geometry.js";
+import { clamp } from "./geometry.ts";
+import type { Point, View } from "./types.ts";
 
-export function worldToScreen(x, y, view) {
+export function worldToScreen(x: number, y: number, view: View): Point {
   return {
     x: view.ox + x * view.ppm,
     y: view.oy - y * view.ppm,
   };
 }
 
-export function screenToWorld(x, y, view) {
+export function screenToWorld(x: number, y: number, view: View): Point {
   return {
     x: (x - view.ox) / view.ppm,
     y: (view.oy - y) / view.ppm,
   };
 }
 
-export function zoomAt(view, sx, sy, factor, minPpm = 0.008, maxPpm = 0.42) {
+export function zoomAt(view: View, sx: number, sy: number, factor: number, minPpm = 0.008, maxPpm = 0.42): View {
   const ppm = clamp(view.ppm * factor, minPpm, maxPpm);
   const scale = ppm / view.ppm;
   return {
@@ -24,7 +25,7 @@ export function zoomAt(view, sx, sy, factor, minPpm = 0.008, maxPpm = 0.42) {
   };
 }
 
-export function fitView(width, height, worldWidth, worldHeight) {
+export function fitView(width: number, height: number, worldWidth: number, worldHeight: number): View {
   const safeWidth = Math.max(worldWidth, 100);
   const safeHeight = Math.max(worldHeight, 100);
   const padLeft = 96;

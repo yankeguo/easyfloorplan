@@ -10,9 +10,10 @@ import {
   runKey,
   xAxisName,
   yAxisName,
-} from "./geometry.js";
-import { labelForSpace, positionsOf, runsOf, spacesOf } from "./model.js";
-import { screenToWorld, worldToScreen } from "./view.js";
+} from "./geometry.ts";
+import type { Direction, Door, HitDoor, HitPoint, HitWall, PlanState, Preview, Run, Scene, Space, View } from "./types.ts";
+import { labelForSpace, positionsOf, runsOf, spacesOf } from "./model.ts";
+import { screenToWorld, worldToScreen } from "./view.ts";
 
 const PAPER = "#f3efe6";
 const INK = "#241f1b";
@@ -22,7 +23,16 @@ const MUTED = "#8a8178";
 const SANS = '"Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif';
 const SPACE_FILLS = ["#e3eee7", "#f4eadc", "#e3ebf4", "#f6e4de", "#ece6f4", "#e5f0ea"];
 
-function fillWorldRect(ctx, view, x, y, width, height, color, bleedPx = 0) {
+function fillWorldRect(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: string,
+  bleedPx = 0,
+): void {
   const bleed = bleedPx / view.ppm;
   const left = x - bleed;
   const bottom = y - bleed;
@@ -33,7 +43,17 @@ function fillWorldRect(ctx, view, x, y, width, height, color, bleedPx = 0) {
   ctx.fillRect(origin.x, origin.y, worldWidth * view.ppm, worldHeight * view.ppm);
 }
 
-function fillBand(ctx, view, dir, cross, start, end, thickness, color, bleedPx = 0.4) {
+function fillBand(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  dir: Direction,
+  cross: number,
+  start: number,
+  end: number,
+  thickness: number,
+  color: string,
+  bleedPx = 0.4,
+): void {
   const half = thickness / 2;
   const from = Math.min(start, end);
   const length = Math.abs(end - start);
@@ -42,7 +62,7 @@ function fillBand(ctx, view, dir, cross, start, end, thickness, color, bleedPx =
   else fillWorldRect(ctx, view, cross - half, from, thickness, length, color, bleedPx);
 }
 
-function solidPieces(run, doors, positions) {
+function solidPieces(run: Run, doors: readonly Door[], positions: readonly number[]): [number, number][] {
   const start = positions[run.start];
   const end = positions[run.end];
   const cuts = doors
@@ -51,7 +71,7 @@ function solidPieces(run, doors, positions) {
     .filter(([from, to]) => to > start + 1e-6 && from < end - 1e-6)
     .map(([from, to]) => [Math.max(from, start), Math.min(to, end)])
     .sort((a, b) => a[0] - b[0]);
-  const pieces = [];
+  const pieces: [number, number][] = [];
   let cursor = start;
   for (const [from, to] of cuts) {
     if (from > cursor + 1e-6) pieces.push([cursor, from]);
@@ -61,7 +81,7 @@ function solidPieces(run, doors, positions) {
   return pieces;
 }
 
-function exteriorSide(run, columns, rows) {
+function exteriorSide(run: Run, columns: number, rows: number): 1 | -1 {
   if (run.dir === "h") {
     if (run.line === 0) return 1;
     if (run.line === rows) return -1;
@@ -72,7 +92,14 @@ function exteriorSide(run, columns, rows) {
   return 1;
 }
 
-function chipText(ctx, text, x, y, angle = 0, color = "#4d453e") {
+function chipText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  angle = 0,
+  color = "#4d453e",
+): void {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
@@ -87,7 +114,7 @@ function chipText(ctx, text, x, y, angle = 0, color = "#4d453e") {
   ctx.restore();
 }
 
-function drawDimensions(ctx, view, xPos, yPos) {
+function drawDimensions(ctx: CanvasRenderingContext2D, view: View, xPos: readonly number[], yPos: readonly number[]): void {
   ctx.save();
   ctx.lineWidth = 1;
   ctx.strokeStyle = MUTED;
@@ -100,7 +127,7 @@ function drawDimensions(ctx, view, xPos, yPos) {
   const rowX = planRight + 30;
   const totalX = planRight + 56;
 
-  function hChain(y, from, to, label) {
+  function hChain(y: number, from: number, to: number, label: string): void {
     const a = worldToScreen(from, 0, view).x;
     const b = worldToScreen(to, 0, view).x;
     ctx.beginPath();
@@ -118,7 +145,7 @@ function drawDimensions(ctx, view, xPos, yPos) {
     if (Math.abs(b - a) >= 36) chipText(ctx, label, (a + b) / 2, y);
   }
 
-  function vChain(x, from, to, label) {
+  function vChain(x: number, from: number, to: number, label: string): void {
     const a = worldToScreen(0, from, view).y;
     const b = worldToScreen(0, to, view).y;
     ctx.beginPath();
@@ -147,7 +174,7 @@ function drawDimensions(ctx, view, xPos, yPos) {
   ctx.restore();
 }
 
-function drawReferenceLines(ctx, view, xPos, yPos) {
+function drawReferenceLines(ctx: CanvasRenderingContext2D, view: View, xPos: readonly number[], yPos: readonly number[]): void {
   ctx.save();
   ctx.lineWidth = 1;
   ctx.strokeStyle = "rgba(120, 106, 92, 0.55)";
@@ -190,7 +217,7 @@ function drawReferenceLines(ctx, view, xPos, yPos) {
   ctx.restore();
 }
 
-function drawBubble(ctx, x, y, text) {
+function drawBubble(ctx: CanvasRenderingContext2D, x: number, y: number, text: string): void {
   ctx.beginPath();
   ctx.arc(x, y, 11, 0, Math.PI * 2);
   ctx.fillStyle = "#f7f4ee";
@@ -202,7 +229,15 @@ function drawBubble(ctx, x, y, text) {
   ctx.fillText(text, x, y + 0.5);
 }
 
-function drawJoints(ctx, view, state, xPos, yPos, color, extra = 0) {
+function drawJoints(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  state: PlanState,
+  xPos: readonly number[],
+  yPos: readonly number[],
+  color: string,
+  extra = 0,
+): void {
   const half = (WALL_THICKNESS + extra) / 2;
   for (let xi = 0; xi < xPos.length; xi += 1) {
     for (let yi = 0; yi < yPos.length; yi += 1) {
@@ -231,7 +266,13 @@ function drawJoints(ctx, view, state, xPos, yPos, color, extra = 0) {
   }
 }
 
-function nearDoor(doors, dir, line, meter, positions) {
+function nearDoor(
+  doors: readonly Door[],
+  dir: Direction,
+  line: number,
+  meter: number,
+  positions: readonly number[],
+): boolean {
   const reach = WALL_THICKNESS / 2;
   for (const door of doors) {
     if (door.dir !== dir || door.line !== line) continue;
@@ -241,7 +282,13 @@ function nearDoor(doors, dir, line, meter, positions) {
   return false;
 }
 
-function drawWindows(ctx, view, state, xPos, yPos) {
+function drawWindows(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  state: PlanState,
+  xPos: readonly number[],
+  yPos: readonly number[],
+): void {
   const columns = state.xIntervals.length;
   const rows = state.yIntervals.length;
   for (const run of runsOf(state)) {
@@ -291,7 +338,14 @@ function drawWindows(ctx, view, state, xPos, yPos) {
   }
 }
 
-function drawDoorSymbol(ctx, view, door, xPos, yPos, selected) {
+function drawDoorSymbol(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  door: Door,
+  xPos: readonly number[],
+  yPos: readonly number[],
+  selected: boolean,
+): void {
   const geometry = doorGeometry(door, xPos, yPos);
   const half = WALL_THICKNESS / 2;
   if (door.dir === "h") {
@@ -320,7 +374,14 @@ function drawDoorSymbol(ctx, view, door, xPos, yPos, selected) {
   ctx.restore();
 }
 
-function drawLabels(ctx, view, state, spaces, xPos, yPos) {
+function drawLabels(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  state: PlanState,
+  spaces: readonly Space[],
+  xPos: readonly number[],
+  yPos: readonly number[],
+): void {
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -352,7 +413,13 @@ function drawLabels(ctx, view, state, spaces, xPos, yPos) {
   ctx.restore();
 }
 
-function drawPoints(ctx, view, xPos, yPos, scene) {
+function drawPoints(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  xPos: readonly number[],
+  yPos: readonly number[],
+  scene: Scene,
+): void {
   const { tool, anchor, hoverPoint } = scene;
   const active = tool === "wall" || tool === "erase";
   for (let xi = 0; xi < xPos.length; xi += 1) {
@@ -375,7 +442,13 @@ function drawPoints(ctx, view, xPos, yPos, scene) {
   }
 }
 
-function drawPreview(ctx, view, preview, xPos, yPos) {
+function drawPreview(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  preview: Preview | null,
+  xPos: readonly number[],
+  yPos: readonly number[],
+): void {
   if (!preview) return;
   const positions = preview.dir === "h" ? xPos : yPos;
   const cross = preview.dir === "h" ? yPos[preview.line] : xPos[preview.line];
@@ -398,7 +471,7 @@ function drawPreview(ctx, view, preview, xPos, yPos) {
   chipText(ctx, `${formatMm(length)} mm`, point.x, point.y - 16);
 }
 
-function drawScaleBar(ctx, x, y, ppm) {
+function drawScaleBar(ctx: CanvasRenderingContext2D, x: number, y: number, ppm: number): void {
   const choices = [500, 1000, 2000, 5000, 10000, 20000];
   let length = choices[0];
   for (const choice of choices) {
@@ -427,7 +500,7 @@ function drawScaleBar(ctx, x, y, ppm) {
   ctx.restore();
 }
 
-export function drawScene(ctx, width, height, scene) {
+export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: Scene): void {
   const { state, view } = scene;
   const { x: xPos, y: yPos } = positionsOf(state);
   const spaces = spacesOf(state);
@@ -542,7 +615,14 @@ export function drawScene(ctx, width, height, scene) {
   if (scene.exporting) drawScaleBar(ctx, 28, height - 36, view.ppm);
 }
 
-function projectSegment(px, py, ax, ay, bx, by) {
+function projectSegment(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): { dist: number; t: number } {
   const dx = bx - ax;
   const dy = by - ay;
   const length = dx * dx + dy * dy;
@@ -552,7 +632,13 @@ function projectSegment(px, py, ax, ay, bx, by) {
   return { dist: Math.hypot(px - x, py - y), t };
 }
 
-function screenRect(x0, y0, x1, y1, view) {
+function screenRect(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  view: View,
+): { x: number; y: number; w: number; h: number } {
   const p0 = worldToScreen(x0, y0, view);
   const p1 = worldToScreen(x1, y1, view);
   const x = Math.min(p0.x, p1.x);
@@ -560,7 +646,7 @@ function screenRect(x0, y0, x1, y1, view) {
   return { x, y, w: Math.abs(p1.x - p0.x), h: Math.abs(p1.y - p0.y) };
 }
 
-function angleOnShortArc(angle, start, end) {
+function angleOnShortArc(angle: number, start: number, end: number): boolean {
   let delta = end - start;
   while (delta <= -Math.PI) delta += Math.PI * 2;
   while (delta > Math.PI) delta -= Math.PI * 2;
@@ -571,7 +657,14 @@ function angleOnShortArc(angle, start, end) {
   return current <= 1e-3 && current >= delta - 1e-3;
 }
 
-function doorPointerDistance(px, py, door, xPos, yPos, view) {
+function doorPointerDistance(
+  px: number,
+  py: number,
+  door: Door,
+  xPos: readonly number[],
+  yPos: readonly number[],
+  view: View,
+): number {
   const geometry = doorGeometry(door, xPos, yPos);
   const half = WALL_THICKNESS / 2;
   const rect =
@@ -599,10 +692,10 @@ function doorPointerDistance(px, py, door, xPos, yPos, view) {
   return Math.min(leafDistance, arcDistance);
 }
 
-export function hitTest(px, py, state, view) {
+export function hitTest(px: number, py: number, state: PlanState, view: View) {
   const world = screenToWorld(px, py, view);
   const { x: xPos, y: yPos } = positionsOf(state);
-  let point = null;
+  let point: HitPoint | null = null;
   let pointDistance = 16;
   for (let xi = 0; xi < xPos.length; xi += 1) {
     for (let yi = 0; yi < yPos.length; yi += 1) {
@@ -615,13 +708,13 @@ export function hitTest(px, py, state, view) {
     }
   }
 
-  let door = null;
+  let door: HitDoor | null = null;
   for (const item of state.doors) {
     const distance = doorPointerDistance(px, py, item, xPos, yPos, view);
     if (distance <= 8 && (!door || distance < door.dist)) door = { door: item, dist: distance };
   }
 
-  let wall = null;
+  let wall: HitWall | null = null;
   for (const run of runsOf(state)) {
     const positions = run.dir === "h" ? xPos : yPos;
     const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
@@ -641,7 +734,7 @@ export function hitTest(px, py, state, view) {
     };
   }
 
-  let space = null;
+  let space: Space | null = null;
   let column = -1;
   let row = -1;
   for (let index = 0; index < xPos.length - 1; index += 1) {

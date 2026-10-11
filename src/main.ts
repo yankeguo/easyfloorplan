@@ -14,7 +14,7 @@ import {
   spaceNetArea,
   xAxisName,
   yAxisName,
-} from "./geometry.js";
+} from "./geometry.ts";
 import {
   addInterval,
   applyGridSpan,
@@ -39,9 +39,51 @@ import {
   spacesOf,
   toggleWindow,
   updateDoor,
-} from "./model.js";
-import { drawScene, hitTest } from "./render.js";
-import { fitView, worldToScreen, zoomAt } from "./view.js";
+} from "./model.ts";
+import { drawScene, hitTest } from "./render.ts";
+import type {
+  ActionResult,
+  Axis,
+  Door,
+  GridPoint,
+  Hit,
+  PlanState,
+  Point,
+  Preview,
+  Run,
+  Scene,
+  Selection,
+  Space,
+  Tool,
+  View,
+} from "./types.ts";
+import { fitView, worldToScreen, zoomAt } from "./view.ts";
+
+function required<T extends Element>(id: string, kind: abstract new (...args: never[]) => T): T {
+  const node = document.getElementById(id);
+  if (!(node instanceof kind)) throw new Error(`缺少 #${id}`);
+  return node;
+}
+
+function isTool(value: string | undefined): value is Tool {
+  return value === "select" || value === "wall" || value === "erase" || value === "door" || value === "window" || value === "label";
+}
+
+function isAxis(value: string | undefined): value is Axis {
+  return value === "x" || value === "y";
+}
+
+function closestButton(target: EventTarget | null, selector: string): HTMLButtonElement | null {
+  if (!(target instanceof Element)) return null;
+  const node = target.closest(selector);
+  return node instanceof HTMLButtonElement ? node : null;
+}
+
+function closestAction(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof Element)) return null;
+  const node = target.closest("[data-action]");
+  return node instanceof HTMLElement ? node : null;
+}
 
 const HINTS = {
   select: "点选墙、门或空间。拖动空白处平移，滚轮缩放，双击空间可改标签。",
@@ -52,20 +94,79 @@ const HINTS = {
   label: "点击一个空间，为它填写名称。",
 };
 
-const TOOL_KEYS = { v: "select", w: "wall", e: "erase", d: "door", n: "window", l: "label" };
+const TOOL_KEYS: Record<string, Tool> = { v: "select", w: "wall", e: "erase", d: "door", n: "window", l: "label" };
 const STORAGE_KEY = "easyfloorplan.v1";
 
-const canvas = document.getElementById("plan");
-const sidebar = document.getElementById("sidebar");
-const editor = document.getElementById("label-editor");
-const hint = document.getElementById("hint");
-const status = document.getElementById("status");
-const sequenceDialog = document.getElementById("sequence-dialog");
-const sequenceForm = document.getElementById("sequence-form");
-const sequenceEditor = document.getElementById("sequence-editor");
-const sequencePreview = document.getElementById("sequence-preview");
+const canvas = required("plan", HTMLCanvasElement);
+const sidebar = required("sidebar", HTMLElement);
+const editor = required("label-editor", HTMLInputElement);
+const hint = required("hint", HTMLElement);
+const status = required("status", HTMLElement);
+const sequenceDialog = required("sequence-dialog", HTMLDialogElement);
+const sequenceForm = required("sequence-form", HTMLFormElement);
+const sequenceEditor = required("sequence-editor", HTMLElement);
+const sequencePreview = required("sequence-preview", HTMLElement);
+const toastNode = required("toast", HTMLElement);
+const undoButton = required("undo", HTMLButtonElement);
+const redoButton = required("redo", HTMLButtonElement);
 
-const app = {
+interface SequenceDraft {
+  axis: Axis;
+  sequences: string[][];
+}
+
+interface IntervalDrag {
+  pointerId: number;
+  from: number;
+  axis: string;
+  seq: string;
+  row: HTMLElement;
+}
+
+type PointerDrag = {
+  type: "maybe-pan" | "pan";
+  pointerId: number;
+  x: number;
+  y: number;
+  moved: boolean;
+  clear?: boolean;
+};
+
+type DoorDrag = {
+  type: "door";
+  pointerId: number;
+  id: string;
+  grab: number;
+  snapshot: string;
+};
+
+interface App {
+  state: PlanState;
+  view: View;
+  viewCustom: boolean;
+  tool: Tool;
+  selection: Selection | null;
+  anchor: GridPoint | null;
+  anchorGesture: number | null;
+  hoverPoint: GridPoint | null;
+  hoverRun: Run | null;
+  preview: Preview | null;
+  drag: PointerDrag | DoorDrag | null;
+  editor: { space: Space; snapshot: string } | null;
+  editorFocusToken: object | null;
+  pendingLabel: Space | null;
+  undo: string[];
+  redo: string[];
+  intervalSnapshot: string | null;
+  sequenceDraft: SequenceDraft | null;
+  lastHit: Hit | null;
+  cssWidth: number;
+  cssHeight: number;
+  dpr: number;
+  spaceDown: boolean;
+}
+
+const app: App = {
   state: loadState(),
   view: { ox: 0, oy: 0, ppm: 0.04 },
   viewCustom: false,
@@ -88,6 +189,7 @@ const app = {
   cssWidth: 1,
   cssHeight: 1,
   dpr: 1,
+  spaceDown: false,
 };
 
 document.getElementById("boot")?.remove();
@@ -105,36 +207,43 @@ fit();
 renderIntervals();
 refresh();
 
-document.getElementById("toolbar").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-tool]");
-  if (button) setTool(button.dataset.tool);
+required("toolbar", HTMLElement).addEventListener("click", (event) => {
+  const button = closestButton(event.target, "[data-tool]");
+  if (!button || !isTool(button.dataset.tool)) return;
+  setTool(button.dataset.tool);
 });
 
-document.getElementById("undo").addEventListener("click", undo);
-document.getElementById("redo").addEventListener("click", redo);
-document.getElementById("fit").addEventListener("click", () => {
+undoButton.addEventListener("click", undo);
+redoButton.addEventListener("click", redo);
+required("fit", HTMLButtonElement).addEventListener("click", () => {
   app.viewCustom = false;
   fit();
   draw();
   renderStatus(app.lastHit);
 });
-document.getElementById("export").addEventListener("click", exportPng);
-document.getElementById("sample").addEventListener("click", loadSample);
-document.getElementById("clear").addEventListener("click", clearPlan);
+required("export", HTMLButtonElement).addEventListener("click", exportPng);
+required("sample", HTMLButtonElement).addEventListener("click", loadSample);
+required("clear", HTMLButtonElement).addEventListener("click", clearPlan);
 
 sidebar.addEventListener("click", onSidebarClick);
 sidebar.addEventListener("change", onSidebarChange);
 sidebar.addEventListener("focusin", (event) => {
-  if (event.target.matches("[data-axis]")) app.intervalSnapshot = serialize(app.state);
+  const input = event.target;
+  if (input instanceof HTMLInputElement && input.matches("[data-axis]")) {
+    app.intervalSnapshot = serialize(app.state);
+  }
 });
 sidebar.addEventListener("focusout", (event) => {
-  if (!event.target.matches("[data-axis]")) return;
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || !input.matches("[data-axis]")) return;
   app.intervalSnapshot = null;
-  const axis = event.target.dataset.axis;
-  const index = Number(event.target.dataset.index);
+  const axis = input.dataset.axis;
+  if (!isAxis(axis)) return;
+  const index = Number(input.dataset.index);
   const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
-  event.target.classList.remove("invalid");
-  if (list[index] != null) event.target.value = formatMm(list[index]);
+  input.classList.remove("invalid");
+  const current = list[index];
+  if (current != null) input.value = formatMm(current);
 });
 sidebar.addEventListener("input", onIntervalInput);
 document.addEventListener("pointerdown", onIntervalDragStart);
@@ -144,14 +253,15 @@ document.addEventListener("pointercancel", onIntervalDragEnd);
 sequenceForm.addEventListener("submit", onSequenceSubmit);
 sequenceForm.addEventListener("click", onSequenceClick);
 sequenceForm.addEventListener("input", onSequenceInput);
-document.getElementById("sequence-cancel").addEventListener("click", () => {
+required("sequence-cancel", HTMLButtonElement).addEventListener("click", () => {
   app.sequenceDraft = null;
   sequenceDialog.close();
 });
 sidebar.addEventListener(
   "wheel",
   (event) => {
-    if (event.target.matches('input[type="number"]')) event.target.blur();
+    const input = event.target;
+    if (input instanceof HTMLInputElement && input.matches('input[type="number"]')) input.blur();
   },
   { passive: true },
 );
@@ -201,7 +311,7 @@ window.addEventListener("blur", () => {
   app.spaceDown = false;
 });
 
-function loadState() {
+function loadState(): PlanState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return createSample();
@@ -211,7 +321,7 @@ function loadState() {
   }
 }
 
-function persist() {
+function persist(): void {
   try {
     localStorage.setItem(STORAGE_KEY, serialize(app.state));
   } catch {
@@ -219,13 +329,13 @@ function persist() {
   }
 }
 
-function typing(target) {
-  if (!target) return false;
+function typing(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable;
 }
 
-function measure() {
+function measure(): void {
   const rect = canvas.getBoundingClientRect();
   app.cssWidth = Math.max(1, rect.width);
   app.cssHeight = Math.max(1, rect.height);
@@ -234,13 +344,13 @@ function measure() {
   canvas.height = Math.max(1, Math.round(app.cssHeight * app.dpr));
 }
 
-function fit() {
+function fit(): void {
   if (app.cssWidth < 40 || app.cssHeight < 40) return;
   const { x, y } = positionsOf(app.state);
   app.view = fitView(app.cssWidth, app.cssHeight, x[x.length - 1], y[y.length - 1]);
 }
 
-function scene() {
+function scene(): Scene {
   return {
     state: app.state,
     view: app.view,
@@ -254,18 +364,19 @@ function scene() {
   };
 }
 
-function draw() {
+function draw(): void {
   const context = canvas.getContext("2d");
+  if (!context) return;
   context.setTransform(app.dpr, 0, 0, app.dpr, 0, 0);
   drawScene(context, app.cssWidth, app.cssHeight, scene());
 }
 
-function localPoint(event) {
+function localPoint(event: PointerEvent | MouseEvent | WheelEvent): Point {
   const rect = canvas.getBoundingClientRect();
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
-function mutate(mutator) {
+function mutate(mutator: (state: PlanState) => ActionResult | void): ActionResult {
   const previous = serialize(app.state);
   const result = mutator(app.state) ?? { ok: true };
   if (result.ok !== false) normalize(app.state);
@@ -280,7 +391,7 @@ function mutate(mutator) {
   return result;
 }
 
-function reconcile(selection) {
+function reconcile(selection: Selection | null): Selection | null {
   if (!selection) return null;
   if (selection.type === "wall") return runByKey(app.state, selection.key) ? selection : null;
   if (selection.type === "door") {
@@ -292,7 +403,7 @@ function reconcile(selection) {
   return null;
 }
 
-function refresh({ intervals = false, refit = false } = {}) {
+function refresh({ intervals = false, refit = false }: { intervals?: boolean; refit?: boolean } = {}): void {
   app.selection = reconcile(app.selection);
   if (refit) app.viewCustom = false;
   if (!app.viewCustom) fit();
@@ -304,16 +415,17 @@ function refresh({ intervals = false, refit = false } = {}) {
   renderStatus(app.lastHit);
 }
 
-function updateChrome() {
+function updateChrome(): void {
   document.querySelectorAll("[data-tool]").forEach((button) => {
+    if (!(button instanceof HTMLElement)) return;
     button.setAttribute("aria-pressed", String(button.dataset.tool === app.tool));
   });
-  document.getElementById("undo").disabled = app.undo.length === 0;
-  document.getElementById("redo").disabled = app.redo.length === 0;
+  undoButton.disabled = app.undo.length === 0;
+  redoButton.disabled = app.redo.length === 0;
   hint.textContent = HINTS[app.tool];
 }
 
-function setTool(tool) {
+function setTool(tool: Tool): void {
   if (app.editor) commitEditor();
   app.tool = tool;
   app.pendingLabel = null;
@@ -324,11 +436,12 @@ function setTool(tool) {
   draw();
 }
 
-function undo() {
+function undo(): void {
   if (app.editor) cancelEditor();
-  if (app.undo.length === 0) return;
+  const previous = app.undo.pop();
+  if (previous === undefined) return;
   app.redo.push(serialize(app.state));
-  app.state = deserialize(app.undo.pop());
+  app.state = deserialize(previous);
   app.selection = null;
   app.pendingLabel = null;
   app.anchor = null;
@@ -337,11 +450,12 @@ function undo() {
   refresh({ intervals: true });
 }
 
-function redo() {
+function redo(): void {
   if (app.editor) commitEditor();
-  if (app.redo.length === 0) return;
+  const next = app.redo.pop();
+  if (next === undefined) return;
   app.undo.push(serialize(app.state));
-  app.state = deserialize(app.redo.pop());
+  app.state = deserialize(next);
   app.selection = null;
   app.pendingLabel = null;
   app.anchor = null;
@@ -350,20 +464,21 @@ function redo() {
   refresh({ intervals: true });
 }
 
-function toast(message) {
-  const node = document.getElementById("toast");
-  node.textContent = message;
-  node.classList.add("show");
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => node.classList.remove("show"), 2600);
+let toastTimer = 0;
+
+function toast(message: string): void {
+  toastNode.textContent = message;
+  toastNode.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => toastNode.classList.remove("show"), 2600);
 }
 
-function renderIntervals() {
-  document.getElementById("panel-x").innerHTML = intervalMarkup("x");
-  document.getElementById("panel-y").innerHTML = intervalMarkup("y");
+function renderIntervals(): void {
+  required("panel-x", HTMLElement).innerHTML = intervalMarkup("x");
+  required("panel-y", HTMLElement).innerHTML = intervalMarkup("y");
 }
 
-function intervalMarkup(axis) {
+function intervalMarkup(axis: Axis): string {
   const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
   const title = axis === "x" ? "横向间隔" : "纵向间隔";
   const help =
@@ -387,16 +502,16 @@ function intervalMarkup(axis) {
   return `<h2>${title}</h2><p>${help}</p>${rows}<div class="interval-actions"><button type="button" class="add" data-action="add-interval" data-axis="${axis}">添加一段</button><button type="button" class="add" data-action="open-sequences" data-axis="${axis}">多序列切分</button></div>`;
 }
 
-function renderReadout() {
+function renderReadout(): void {
   const { x, y } = positionsOf(app.state);
-  const items = (positions, name) =>
+  const items = (positions: number[], name: (index: number) => string) =>
     positions
       .map(
         (meter, index) =>
           `<li><b>${name(index)}</b><span>${formatMm(meter)} mm</span></li>`,
       )
       .join("");
-  document.getElementById("readout").innerHTML = `
+  required("readout", HTMLElement).innerHTML = `
     <div>
       <h2>竖向参考线</h2>
       <ol>${items(x, xAxisName)}</ol>
@@ -409,8 +524,8 @@ function renderReadout() {
     </div>`;
 }
 
-function renderSelection() {
-  const mount = document.getElementById("selection");
+function renderSelection(): void {
+  const mount = required("selection", HTMLElement);
   const selection = app.selection;
   if (!selection) {
     mount.innerHTML =
@@ -478,7 +593,7 @@ function renderSelection() {
     </div>`;
 }
 
-function doorOffsetText(door) {
+function doorOffsetText(door: Door): string {
   const positions = door.dir === "h" ? positionsOf(app.state).x : positionsOf(app.state).y;
   const run = runContaining(app.state, door.dir, door.line, door.anchor);
   const start = positions[door.anchor] + door.local;
@@ -486,7 +601,7 @@ function doorOffsetText(door) {
   return `${formatMm(Math.max(0, start - origin))} mm`;
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: string): string {
   return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -494,12 +609,13 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function onSidebarClick(event) {
-  const button = event.target.closest("[data-action]");
+function onSidebarClick(event: MouseEvent): void {
+  const button = closestAction(event.target);
   if (!button || button.tagName === "INPUT") return;
   const action = button.dataset.action;
   if (action === "add-interval") {
     const axis = button.dataset.axis;
+    if (!isAxis(axis)) return;
     const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
     const result = mutate(() => addInterval(app.state, axis, list[list.length - 1] || 3000));
     app.anchor = null;
@@ -508,12 +624,15 @@ function onSidebarClick(event) {
   }
   if (action === "drag-interval") return;
   if (action === "open-sequences") {
+    if (!isAxis(button.dataset.axis)) return;
     openSequenceDialog(button.dataset.axis);
     return;
   }
   if (action === "remove-interval") {
+    const axis = button.dataset.axis;
+    if (!isAxis(axis)) return;
     const result = mutate(() =>
-      removeIntervalAt(app.state, button.dataset.axis, Number(button.dataset.index)),
+      removeIntervalAt(app.state, axis, Number(button.dataset.index)),
     );
     app.selection = null;
     app.anchor = null;
@@ -526,7 +645,9 @@ function onSidebarClick(event) {
     return;
   }
   if (action === "flip-hinge" || action === "flip-side") {
-    const door = app.state.doors.find((item) => item.id === app.selection?.id);
+    const selection = app.selection;
+    if (selection?.type !== "door") return;
+    const door = app.state.doors.find((item) => item.id === selection.id);
     if (!door) return;
     if (action === "flip-hinge") {
       mutate(() => updateDoor(app.state, door.id, { hinge: door.hinge === "high" ? "low" : "high" }));
@@ -537,7 +658,9 @@ function onSidebarClick(event) {
     return;
   }
   if (action === "edit-label" || action === "clear-label") {
-    const space = spacesOf(app.state).find((item) => item.key === app.selection?.key);
+    const selection = app.selection;
+    if (selection?.type !== "space") return;
+    const space = spacesOf(app.state).find((item) => item.key === selection.key);
     if (!space) return;
     if (action === "edit-label") openEditor(space);
     else {
@@ -547,21 +670,24 @@ function onSidebarClick(event) {
   }
 }
 
-function onSidebarChange(event) {
-  if (event.target.dataset.action !== "toggle-window") return;
-  const run = runByKey(app.state, app.selection?.key);
+function onSidebarChange(event: Event): void {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || input.dataset.action !== "toggle-window") return;
+  const selection = app.selection;
+  if (selection?.type !== "wall") return;
+  const run = runByKey(app.state, selection.key);
   if (!run) return;
   mutate(() => toggleWindow(app.state, run));
   refresh();
 }
 
-let intervalDrag = null;
+let intervalDrag: IntervalDrag | null = null;
 
-function onIntervalDragStart(event) {
-  const handle = event.target.closest("[data-action='drag-interval']");
+function onIntervalDragStart(event: PointerEvent): void {
+  const handle = closestButton(event.target, "[data-action='drag-interval']");
   if (!handle || handle.disabled || event.button !== 0) return;
   const row = handle.closest(".interval-row");
-  if (!row) return;
+  if (!(row instanceof HTMLElement)) return;
   event.preventDefault();
   handle.setPointerCapture(event.pointerId);
   intervalDrag = {
@@ -574,13 +700,13 @@ function onIntervalDragStart(event) {
   row.classList.add("is-dragging");
 }
 
-function onIntervalDragMove(event) {
+function onIntervalDragMove(event: PointerEvent): void {
   if (!intervalDrag || event.pointerId !== intervalDrag.pointerId) return;
   const target = intervalRowAt(event.clientX, event.clientY);
   for (const row of intervalDragRows()) row.classList.toggle("is-drop", row === target);
 }
 
-function onIntervalDragEnd(event) {
+function onIntervalDragEnd(event: PointerEvent): void {
   if (!intervalDrag || event.pointerId !== intervalDrag.pointerId) return;
   const target = intervalRowAt(event.clientX, event.clientY);
   const drag = intervalDrag;
@@ -589,7 +715,9 @@ function onIntervalDragEnd(event) {
   const to = Number(target.dataset.index);
   if (to === drag.from) return;
   if (drag.seq === "") {
-    const result = mutate(() => reorderInterval(app.state, drag.axis, drag.from, to));
+    if (!isAxis(drag.axis)) return;
+    const axis = drag.axis;
+    const result = mutate(() => reorderInterval(app.state, axis, drag.from, to));
     app.anchor = null;
     if (result.ok) refresh({ intervals: true });
     return;
@@ -597,30 +725,31 @@ function onIntervalDragEnd(event) {
   syncSequenceDraft();
   const list = app.sequenceDraft?.sequences[Number(drag.seq)];
   if (!list) return;
-  const [value] = list.splice(drag.from, 1);
+  const value = list.splice(drag.from, 1)[0];
+  if (value === undefined) return;
   list.splice(to, 0, value);
   renderSequenceDialog();
 }
 
-function clearIntervalDrag() {
+function clearIntervalDrag(): void {
   if (!intervalDrag) return;
   for (const row of intervalDragRows()) row.classList.remove("is-dragging", "is-drop");
   intervalDrag = null;
 }
 
-function intervalDragRows() {
+function intervalDragRows(): HTMLElement[] {
   if (!intervalDrag) return [];
   const selector =
     intervalDrag.seq === ""
       ? `#panel-${intervalDrag.axis} .interval-row`
       : `#sequence-editor [data-seq="${intervalDrag.seq}"] .interval-row`;
-  return [...document.querySelectorAll(selector)];
+  return [...document.querySelectorAll(selector)].filter((node): node is HTMLElement => node instanceof HTMLElement);
 }
 
-function intervalRowAt(x, y) {
+function intervalRowAt(x: number, y: number): HTMLElement | null {
   const hit = document.elementFromPoint(x, y);
-  const row = hit?.closest?.(".interval-row");
-  if (!row || !intervalDrag) return null;
+  const row = hit?.closest(".interval-row");
+  if (!(row instanceof HTMLElement) || !intervalDrag) return null;
   const sameGroup =
     intervalDrag.seq === ""
       ? row.dataset.axis === intervalDrag.axis && row.dataset.seq == null
@@ -628,19 +757,19 @@ function intervalRowAt(x, y) {
   return sameGroup ? row : null;
 }
 
-function openSequenceDialog(axis) {
+function openSequenceDialog(axis: Axis): void {
   const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
   app.sequenceDraft = {
     axis,
     sequences: [list.map((value) => formatMm(value))],
   };
-  document.getElementById("sequence-title").textContent =
+  required("sequence-title", HTMLElement).textContent =
     axis === "x" ? "横向多序列切分" : "纵向多序列切分";
   renderSequenceDialog();
   sequenceDialog.showModal();
 }
 
-function renderSequenceDialog() {
+function renderSequenceDialog(): void {
   const draft = app.sequenceDraft;
   if (!draft) return;
   const canRemoveSequence = draft.sequences.length > 1;
@@ -681,22 +810,26 @@ function renderSequenceDialog() {
   updateSequencePreview();
 }
 
-function syncSequenceDraft() {
+function syncSequenceDraft(): void {
   const draft = app.sequenceDraft;
   if (!draft) return;
-  const sequences = [];
+  const sequences: string[][] = [];
   for (const card of sequenceEditor.querySelectorAll(".sequence")) {
-    sequences.push([...card.querySelectorAll("input[data-entry]")].map((input) => input.value));
+    const values: string[] = [];
+    for (const input of card.querySelectorAll("input[data-entry]")) {
+      if (input instanceof HTMLInputElement) values.push(input.value);
+    }
+    sequences.push(values);
   }
   if (sequences.length > 0) draft.sequences = sequences;
 }
 
-function updateSequencePreview() {
+function updateSequencePreview(): void {
   const draft = app.sequenceDraft;
   if (!draft) return;
-  const sequences = [];
+  const sequences: number[][] = [];
   for (const sequence of draft.sequences) {
-    const values = [];
+    const values: number[] = [];
     for (const raw of sequence) {
       const value = roundMm(Number(raw));
       if (!Number.isFinite(value) || value < MIN_INTERVAL || value > MAX_INTERVAL) {
@@ -715,15 +848,15 @@ function updateSequencePreview() {
   sequencePreview.textContent = `结算后 ${intervals.map((value) => formatMm(value)).join(" · ")} mm，共 ${intervals.length} 段。`;
 }
 
-function onSequenceInput(event) {
+function onSequenceInput(event: Event): void {
   const input = event.target;
-  if (!input.matches?.("input[data-entry]")) return;
+  if (!(input instanceof HTMLInputElement) || !input.matches("input[data-entry]")) return;
   syncSequenceDraft();
   updateSequencePreview();
 }
 
-function onSequenceClick(event) {
-  const button = event.target.closest("[data-action]");
+function onSequenceClick(event: MouseEvent): void {
+  const button = closestAction(event.target);
   if (!button || !app.sequenceDraft) return;
   const action = button.dataset.action;
   if (action === "drag-interval") return;
@@ -756,7 +889,7 @@ function onSequenceClick(event) {
   renderSequenceDialog();
 }
 
-function onSequenceSubmit(event) {
+function onSequenceSubmit(event: SubmitEvent): void {
   event.preventDefault();
   if (!app.sequenceDraft) return;
   syncSequenceDraft();
@@ -779,10 +912,11 @@ function onSequenceSubmit(event) {
   refresh({ intervals: true, refit: true });
 }
 
-function onIntervalInput(event) {
+function onIntervalInput(event: Event): void {
   const input = event.target;
-  if (!input.matches("[data-axis]")) return;
+  if (!(input instanceof HTMLInputElement) || !input.matches("[data-axis]")) return;
   const axis = input.dataset.axis;
+  if (!isAxis(axis)) return;
   const index = Number(input.dataset.index);
   const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
   const rounded = roundMm(Number(input.value));
@@ -806,7 +940,7 @@ function onIntervalInput(event) {
   refresh();
 }
 
-function onPointerDown(event) {
+function onPointerDown(event: PointerEvent): void {
   const point = localPoint(event);
   if (event.button === 1 || event.button === 2 || app.spaceDown || event.altKey) {
     beginPan(event, point);
@@ -845,8 +979,9 @@ function onPointerDown(event) {
   }
 
   if (app.tool === "window" && hit.wall) {
-    const key = runKey(hit.wall.run);
-    mutate(() => toggleWindow(app.state, hit.wall.run));
+    const wall = hit.wall;
+    const key = runKey(wall.run);
+    mutate(() => toggleWindow(app.state, wall.run));
     app.selection = { type: "wall", key };
     refresh();
     return;
@@ -860,8 +995,9 @@ function onPointerDown(event) {
       return;
     }
     if (hit.wall) {
-      const result = mutate(() => placeDoor(app.state, hit.wall.run, hit.wall.meter));
-      if (result.ok) app.selection = { type: "door", id: result.id };
+      const wall = hit.wall;
+      const result = mutate(() => placeDoor(app.state, wall.run, wall.meter));
+      if (result.ok && result.id) app.selection = { type: "door", id: result.id };
       refresh();
     }
     return;
@@ -895,7 +1031,7 @@ function onPointerDown(event) {
   };
 }
 
-function onPointerMove(event) {
+function onPointerMove(event: PointerEvent): void {
   const point = localPoint(event);
   const hit = hitTest(point.x, point.y, app.state, app.view);
   app.lastHit = hit;
@@ -921,10 +1057,11 @@ function onPointerMove(event) {
   }
 
   if (app.drag?.type === "door") {
-    const door = app.state.doors.find((item) => item.id === app.drag.id);
+    const drag = app.drag;
+    const door = app.state.doors.find((item) => item.id === drag.id);
     if (door) {
       const along = door.dir === "h" ? hit.world.x : hit.world.y;
-      moveDoor(app.state, door.id, along - app.drag.grab);
+      moveDoor(app.state, door.id, along - drag.grab);
       const node = document.querySelector("[data-door-pos]");
       if (node) node.textContent = doorOffsetText(door);
       draw();
@@ -935,7 +1072,9 @@ function onPointerMove(event) {
 
   if ((app.tool === "wall" || app.tool === "erase") && app.anchor && hit.point) {
     const span = gridSpan(app.anchor, hit.point);
-    app.preview = span.ok ? { ...span, mode: app.tool } : null;
+    app.preview = span.ok
+      ? { dir: span.dir, line: span.line, start: span.start, end: span.end, mode: app.tool }
+      : null;
   } else {
     app.preview = null;
   }
@@ -944,7 +1083,7 @@ function onPointerMove(event) {
   draw();
 }
 
-function onPointerUp(event) {
+function onPointerUp(event: PointerEvent): void {
   if (app.pendingLabel) {
     const space = app.pendingLabel;
     app.pendingLabel = null;
@@ -986,14 +1125,14 @@ function onPointerUp(event) {
   }
 }
 
-function onDoubleClick(event) {
+function onDoubleClick(event: MouseEvent): void {
   if (app.tool !== "select") return;
   const point = localPoint(event);
   const hit = hitTest(point.x, point.y, app.state, app.view);
   if (hit.space && !hit.wall && !(hit.door && hit.door.dist <= 8)) openEditor(hit.space);
 }
 
-function onWheel(event) {
+function onWheel(event: WheelEvent): void {
   event.preventDefault();
   const point = localPoint(event);
   const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
@@ -1004,13 +1143,13 @@ function onWheel(event) {
   renderStatus(app.lastHit);
 }
 
-function beginPan(event, point) {
+function beginPan(event: PointerEvent, point: Point): void {
   canvas.setPointerCapture(event.pointerId);
   app.drag = { type: "pan", pointerId: event.pointerId, x: point.x, y: point.y, moved: true };
   app.viewCustom = true;
 }
 
-function beginDoorDrag(event, door, world) {
+function beginDoorDrag(event: PointerEvent, door: Door, world: Point): void {
   const positions = door.dir === "h" ? positionsOf(app.state).x : positionsOf(app.state).y;
   const start = positions[door.anchor] + door.local;
   const along = door.dir === "h" ? world.x : world.y;
@@ -1023,7 +1162,7 @@ function beginDoorDrag(event, door, world) {
   };
 }
 
-function finishSpan(from, to) {
+function finishSpan(from: GridPoint, to: GridPoint): void {
   const mode = app.tool === "erase" ? "erase" : "add";
   const result = mutate(() => applyGridSpan(app.state, from, to, mode));
   app.preview = null;
@@ -1042,7 +1181,7 @@ function finishSpan(from, to) {
   refresh();
 }
 
-function deleteSelection() {
+function deleteSelection(): void {
   const selection = app.selection;
   if (!selection) return;
   if (selection.type === "wall") {
@@ -1061,7 +1200,7 @@ function deleteSelection() {
   refresh();
 }
 
-function openEditor(space) {
+function openEditor(space: Space): void {
   if (app.editor) commitEditor();
   const label = labelForSpace(app.state, space);
   app.editor = { space, snapshot: serialize(app.state) };
@@ -1087,7 +1226,7 @@ function openEditor(space) {
   }, 200);
 }
 
-function positionEditor(space) {
+function positionEditor(space: Space): void {
   const { x, y } = positionsOf(app.state);
   const anchor = labelAnchor(space, x, y);
   const point = worldToScreen(anchor.x, anchor.y, app.view);
@@ -1095,7 +1234,7 @@ function positionEditor(space) {
   editor.style.top = `${point.y}px`;
 }
 
-function commitEditor() {
+function commitEditor(): void {
   if (!app.editor) return;
   const previous = app.editor.snapshot;
   app.editor = null;
@@ -1113,7 +1252,7 @@ function commitEditor() {
   refresh();
 }
 
-function cancelEditor() {
+function cancelEditor(): void {
   if (!app.editor) return;
   const snapshot = app.editor.snapshot;
   app.editor = null;
@@ -1125,7 +1264,7 @@ function cancelEditor() {
   refresh();
 }
 
-function onKeyDown(event) {
+function onKeyDown(event: KeyboardEvent): void {
   if (event.code === "Space" && !typing(event.target)) {
     event.preventDefault();
     app.spaceDown = true;
@@ -1157,7 +1296,7 @@ function onKeyDown(event) {
   if (tool) setTool(tool);
 }
 
-function updateCursor(hit) {
+function updateCursor(hit: Hit): void {
   if (app.spaceDown || app.drag?.type === "pan") {
     canvas.style.cursor = "grabbing";
     return;
@@ -1177,12 +1316,13 @@ function updateCursor(hit) {
   canvas.style.cursor = hit.door || hit.wall ? "pointer" : "grab";
 }
 
-function renderStatus(hit) {
+function renderStatus(hit: Hit | null): void {
+  const positions = positionsOf(app.state);
   const fitted = fitView(
     app.cssWidth,
     app.cssHeight,
-    positionsOf(app.state).x.at(-1),
-    positionsOf(app.state).y.at(-1),
+    positions.x.at(-1) ?? 0,
+    positions.y.at(-1) ?? 0,
   );
   const zoom = Math.round((app.view.ppm / fitted.ppm) * 100);
   let message = `墙 120 mm · 门 1000 mm · ${zoom}%`;
@@ -1195,7 +1335,7 @@ function renderStatus(hit) {
   status.textContent = message;
 }
 
-function loadSample() {
+function loadSample(): void {
   if (!window.confirm("载入示例会替换当前户型。可以用撤销恢复。")) return;
   const previous = serialize(app.state);
   app.state = createSample();
@@ -1209,7 +1349,7 @@ function loadSample() {
   refresh({ intervals: true, refit: true });
 }
 
-function clearPlan() {
+function clearPlan(): void {
   const empty =
     app.state.hEdges.size + app.state.vEdges.size + app.state.doors.length + app.state.labels.length === 0;
   if (empty) return;
@@ -1226,7 +1366,7 @@ function clearPlan() {
   refresh();
 }
 
-function exportPng() {
+function exportPng(): void {
   const { x, y } = positionsOf(app.state);
   const worldWidth = x[x.length - 1];
   const worldHeight = y[y.length - 1];
@@ -1240,6 +1380,7 @@ function exportPng() {
   output.width = width * dpr;
   output.height = height * dpr;
   const context = output.getContext("2d");
+  if (!context) return;
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawScene(context, width, height, {
     state: app.state,

@@ -1,3 +1,19 @@
+import type {
+  Axis,
+  Cell,
+  Direction,
+  Door,
+  DoorGeometry,
+  GridPoint,
+  GridSpanResult,
+  Label,
+  Point,
+  Rect,
+  Run,
+  Side,
+  Space,
+} from "./types.ts";
+
 export const WALL_THICKNESS = 120;
 export const DOOR_WIDTH = 1000;
 export const MIN_INTERVAL = 300;
@@ -6,19 +22,19 @@ export const MAX_INTERVALS = 24;
 export const MAX_SEQUENCES = 8;
 export const MAX_SETTLED = 48;
 
-export function clamp(value, min, max) {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-export function roundMm(value) {
+export function roundMm(value: number): number {
   return Math.round(value);
 }
 
-export function formatMm(value) {
+export function formatMm(value: number): string {
   return String(roundMm(value));
 }
 
-export function prefixSums(intervals) {
+export function prefixSums(intervals: readonly number[]): number[] {
   const positions = [0];
   for (const interval of intervals) {
     positions.push(roundMm(positions[positions.length - 1] + interval));
@@ -26,14 +42,14 @@ export function prefixSums(intervals) {
   return positions;
 }
 
-export function meterIndex(positions, meter) {
+export function meterIndex(positions: readonly number[], meter: number): number {
   for (let index = 0; index < positions.length; index += 1) {
     if (Math.abs(positions[index] - meter) <= 1e-6) return index;
   }
   return -1;
 }
 
-export function mergeSequences(sequences) {
+export function mergeSequences(sequences: readonly (readonly number[])[]): number[] {
   const points = new Set([0]);
   for (const sequence of sequences) {
     let cursor = 0;
@@ -51,11 +67,11 @@ export function mergeSequences(sequences) {
   return intervals;
 }
 
-export function xAxisName(index) {
+export function xAxisName(index: number): string {
   return String(index + 1);
 }
 
-export function yAxisName(index) {
+export function yAxisName(index: number): string {
   let n = index;
   let name = "";
   while (n >= 0) {
@@ -65,16 +81,16 @@ export function yAxisName(index) {
   return name;
 }
 
-export function edgeKey(dir, line, index) {
+export function edgeKey(dir: Direction, line: number, index: number): string {
   return `${dir}:${line}:${index}`;
 }
 
-export function parseEdgeKey(key) {
+export function parseEdgeKey(key: string): { dir: Direction; line: number; index: number } {
   const [dir, line, index] = key.split(":");
-  return { dir, line: Number(line), index: Number(index) };
+  return { dir: dir === "v" ? "v" : "h", line: Number(line), index: Number(index) };
 }
 
-export function addSpan(set, dir, line, start, end) {
+export function addSpan(set: Set<string>, dir: Direction, line: number, start: number, end: number): void {
   const from = Math.min(start, end);
   const to = Math.max(start, end);
   for (let index = from; index < to; index += 1) {
@@ -82,7 +98,7 @@ export function addSpan(set, dir, line, start, end) {
   }
 }
 
-export function removeSpan(set, dir, line, start, end) {
+export function removeSpan(set: Set<string>, dir: Direction, line: number, start: number, end: number): void {
   const from = Math.min(start, end);
   const to = Math.max(start, end);
   for (let index = from; index < to; index += 1) {
@@ -90,13 +106,14 @@ export function removeSpan(set, dir, line, start, end) {
   }
 }
 
-export function computeRuns(edgeSet, dir) {
-  const grouped = new Map();
+export function computeRuns(edgeSet: ReadonlySet<string>, dir: Direction): Run[] {
+  const grouped = new Map<number, number[]>();
   for (const key of edgeSet) {
     const edge = parseEdgeKey(key);
     if (edge.dir !== dir) continue;
-    if (!grouped.has(edge.line)) grouped.set(edge.line, []);
-    grouped.get(edge.line).push(edge.index);
+    const bucket = grouped.get(edge.line);
+    if (bucket) bucket.push(edge.index);
+    else grouped.set(edge.line, [edge.index]);
   }
   const runs = [];
   for (const [line, indices] of grouped) {
@@ -117,11 +134,16 @@ export function computeRuns(edgeSet, dir) {
   return runs;
 }
 
-export function runKey(run) {
+export function runKey(run: Run): string {
   return `${run.dir}:${run.line}:${run.start}:${run.end}`;
 }
 
-export function findRunContainingEdge(edgeSet, dir, line, edgeIndex) {
+export function findRunContainingEdge(
+  edgeSet: ReadonlySet<string>,
+  dir: Direction,
+  line: number,
+  edgeIndex: number,
+): Run | null {
   return (
     computeRuns(edgeSet, dir).find(
       (run) => run.line === line && edgeIndex >= run.start && edgeIndex < run.end,
@@ -129,7 +151,7 @@ export function findRunContainingEdge(edgeSet, dir, line, edgeIndex) {
   );
 }
 
-export function gridSpan(from, to) {
+export function gridSpan(from: GridPoint, to: GridPoint): GridSpanResult {
   if (from.xi === to.xi && from.yi === to.yi) {
     return { ok: false, reason: "same" };
   }
@@ -154,24 +176,29 @@ export function gridSpan(from, to) {
   return { ok: false, reason: "diagonal" };
 }
 
-export function computeSpaces(cols, rows, hEdges, vEdges) {
+export function computeSpaces(
+  cols: number,
+  rows: number,
+  hEdges: ReadonlySet<string>,
+  vEdges: ReadonlySet<string>,
+): Space[] {
   const count = cols * rows;
   if (count <= 0) return [];
   const parent = Array.from({ length: count }, (_, index) => index);
-  function find(index) {
+  function find(index: number): number {
     let cursor = index;
     while (parent[cursor] !== cursor) {
-      parent[cursor] = parent[parent[cursor]];
-      cursor = parent[cursor];
+      parent[cursor] = parent[parent[cursor]] ?? cursor;
+      cursor = parent[cursor] ?? cursor;
     }
     return cursor;
   }
-  function unite(a, b) {
+  function unite(a: number, b: number): void {
     const pa = find(a);
     const pb = find(b);
     if (pa !== pb) parent[pb] = pa;
   }
-  const cellId = (column, row) => row * cols + column;
+  const cellId = (column: number, row: number) => row * cols + column;
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < cols; column += 1) {
       if (column + 1 < cols && !vEdges.has(edgeKey("v", column + 1, row))) {
@@ -182,12 +209,13 @@ export function computeSpaces(cols, rows, hEdges, vEdges) {
       }
     }
   }
-  const groups = new Map();
+  const groups = new Map<number, Cell[]>();
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < cols; column += 1) {
       const root = find(cellId(column, row));
-      if (!groups.has(root)) groups.set(root, []);
-      groups.get(root).push({ c: column, r: row });
+      const cells = groups.get(root);
+      if (cells) cells.push({ c: column, r: row });
+      else groups.set(root, [{ c: column, r: row }]);
     }
   }
   const spaces = [...groups.values()].map((cells) => {
@@ -201,7 +229,14 @@ export function computeSpaces(cols, rows, hEdges, vEdges) {
   return spaces;
 }
 
-export function cellInnerRect(column, row, xPos, yPos, hEdges, vEdges) {
+export function cellInnerRect(
+  column: number,
+  row: number,
+  xPos: readonly number[],
+  yPos: readonly number[],
+  hEdges: ReadonlySet<string>,
+  vEdges: ReadonlySet<string>,
+): Rect {
   const inset = WALL_THICKNESS / 2;
   let x0 = xPos[column];
   let x1 = xPos[column + 1];
@@ -216,7 +251,7 @@ export function cellInnerRect(column, row, xPos, yPos, hEdges, vEdges) {
   return { x0, y0, x1, y1 };
 }
 
-export function spaceGrossArea(space, xPos, yPos) {
+export function spaceGrossArea(space: Space, xPos: readonly number[], yPos: readonly number[]): number {
   let area = 0;
   for (const cell of space.cells) {
     area += (xPos[cell.c + 1] - xPos[cell.c]) * (yPos[cell.r + 1] - yPos[cell.r]);
@@ -224,7 +259,13 @@ export function spaceGrossArea(space, xPos, yPos) {
   return area;
 }
 
-export function spaceNetArea(space, xPos, yPos, hEdges, vEdges) {
+export function spaceNetArea(
+  space: Space,
+  xPos: readonly number[],
+  yPos: readonly number[],
+  hEdges: ReadonlySet<string>,
+  vEdges: ReadonlySet<string>,
+): number {
   let area = 0;
   for (const cell of space.cells) {
     const rect = cellInnerRect(cell.c, cell.r, xPos, yPos, hEdges, vEdges);
@@ -233,7 +274,7 @@ export function spaceNetArea(space, xPos, yPos, hEdges, vEdges) {
   return area;
 }
 
-export function labelAnchor(space, xPos, yPos) {
+export function labelAnchor(space: Space, xPos: readonly number[], yPos: readonly number[]): Point {
   let area = 0;
   let cx = 0;
   let cy = 0;
@@ -257,7 +298,7 @@ export function labelAnchor(space, xPos, yPos) {
     );
   });
   if (inside) return centroid;
-  let best = null;
+  let best: Point | null = null;
   let bestDistance = Infinity;
   for (const cell of space.cells) {
     const point = {
@@ -270,19 +311,19 @@ export function labelAnchor(space, xPos, yPos) {
       bestDistance = distance;
     }
   }
-  return best;
+  return best ?? centroid;
 }
 
-export function doorSpanMeters(door, positions) {
+export function doorSpanMeters(door: Door, positions: readonly number[]): [number, number] {
   const start = positions[door.anchor] + door.local;
   return [start, start + DOOR_WIDTH];
 }
 
-export function doorGeometry(door, xPos, yPos) {
+export function doorGeometry(door: Door, xPos: readonly number[], yPos: readonly number[]): DoorGeometry {
   const along = door.dir === "h" ? xPos : yPos;
   const cross = door.dir === "h" ? yPos[door.line] : xPos[door.line];
   const [start, end] = doorSpanMeters(door, along);
-  const side = door.side >= 0 ? 1 : -1;
+  const side: Side = door.side >= 0 ? 1 : -1;
   const hingeAtLow = door.hinge !== "high";
   const hingeMeter = hingeAtLow ? start : end;
   const closedMeter = hingeAtLow ? end : start;
@@ -304,7 +345,7 @@ export function doorGeometry(door, xPos, yPos) {
   };
 }
 
-export function anchorFromMeter(positions, meter) {
+export function anchorFromMeter(positions: readonly number[], meter: number): { anchor: number; local: number } {
   const last = positions.length - 2;
   if (last < 0) return { anchor: 0, local: 0 };
   let anchor = 0;
@@ -314,7 +355,7 @@ export function anchorFromMeter(positions, meter) {
   return { anchor, local: meter - positions[anchor] };
 }
 
-function intervalIndex(positions, meter) {
+function intervalIndex(positions: readonly number[], meter: number): number {
   if (meter < positions[0] - 1e-6) return -1;
   for (let index = 0; index < positions.length - 1; index += 1) {
     if (meter < positions[index + 1] - 1e-9) return index;
@@ -322,7 +363,14 @@ function intervalIndex(positions, meter) {
   return -1;
 }
 
-export function spanCovered(dir, line, start, end, edges, positions) {
+export function spanCovered(
+  dir: Direction,
+  line: number,
+  start: number,
+  end: number,
+  edges: ReadonlySet<string>,
+  positions: readonly number[],
+): boolean {
   if (!(end > start + 1e-6)) return false;
   const epsilon = 1e-6;
   let cursor = start;
@@ -340,8 +388,8 @@ export function spanCovered(dir, line, start, end, edges, positions) {
   return true;
 }
 
-function subtractGaps(gaps, blockStart, blockEnd) {
-  const next = [];
+function subtractGaps(gaps: [number, number][], blockStart: number, blockEnd: number): [number, number][] {
+  const next: [number, number][] = [];
   for (const [start, end] of gaps) {
     if (blockEnd <= start || blockStart >= end) {
       next.push([start, end]);
@@ -353,8 +401,15 @@ function subtractGaps(gaps, blockStart, blockEnd) {
   return next.filter(([start, end]) => end - start >= -1e-9);
 }
 
-function slideToFree(meter, minStart, maxStart, others, door, positions) {
-  let gaps = [[minStart, maxStart]];
+function slideToFree(
+  meter: number,
+  minStart: number,
+  maxStart: number,
+  others: readonly Door[],
+  door: Door,
+  positions: readonly number[],
+): number | null {
+  let gaps: [number, number][] = [[minStart, maxStart]];
   for (const other of others) {
     if (other.id === door.id || other.dir !== door.dir || other.line !== door.line) continue;
     const otherStart = positions[other.anchor] + other.local;
@@ -381,7 +436,12 @@ function slideToFree(meter, minStart, maxStart, others, door, positions) {
   return best;
 }
 
-export function fitDoor(door, edges, positions, others) {
+export function fitDoor(
+  door: Door,
+  edges: ReadonlySet<string>,
+  positions: readonly number[],
+  others: readonly Door[],
+): Door | null {
   const bayCount = positions.length - 1;
   if (bayCount <= 0) return null;
   if (door.anchor < 0 || door.anchor >= bayCount) return null;
@@ -395,7 +455,7 @@ export function fitDoor(door, edges, positions, others) {
   const bayLength = positions[door.anchor + 1] - positions[door.anchor];
   let local = Number.isFinite(door.local) ? door.local : 0;
   local = clamp(local, 0, bayLength);
-  let meter = clamp(positions[door.anchor] + local, runStart, maxStart);
+  let meter: number | null = clamp(positions[door.anchor] + local, runStart, maxStart);
   meter = slideToFree(meter, runStart, maxStart, others, door, positions);
   if (meter == null) return null;
   if (!spanCovered(door.dir, door.line, meter, meter + DOOR_WIDTH, edges, positions)) {
@@ -409,7 +469,13 @@ export function fitDoor(door, edges, positions, others) {
   };
 }
 
-export function normalizeDoors(doors, hEdges, vEdges, xPos, yPos) {
+export function normalizeDoors(
+  doors: readonly Door[],
+  hEdges: ReadonlySet<string>,
+  vEdges: ReadonlySet<string>,
+  xPos: readonly number[],
+  yPos: readonly number[],
+): Door[] {
   const kept = [];
   for (const door of doors) {
     const positions = door.dir === "h" ? xPos : yPos;
@@ -420,7 +486,7 @@ export function normalizeDoors(doors, hEdges, vEdges, xPos, yPos) {
   return kept;
 }
 
-export function runIsWindow(windowEdges, run) {
+export function runIsWindow(windowEdges: ReadonlySet<string>, run: Run): boolean {
   if (run.end <= run.start) return false;
   for (let index = run.start; index < run.end; index += 1) {
     if (!windowEdges.has(edgeKey(run.dir, run.line, index))) return false;
@@ -428,11 +494,11 @@ export function runIsWindow(windowEdges, run) {
   return true;
 }
 
-export function rebindLabels(labels, spaces) {
+export function rebindLabels(labels: readonly Label[], spaces: readonly Space[]): Label[] {
   const pools = labels
     .filter((label) => label.text && label.text.trim())
     .map((label) => ({ ...label, text: label.text.trim(), cells: [...label.cells] }));
-  const used = new Set();
+  const used = new Set<string>();
   const rebound = [];
   for (const space of spaces) {
     const keys = new Set(space.cells.map((cell) => `${cell.c},${cell.r}`));
@@ -456,7 +522,7 @@ export function rebindLabels(labels, spaces) {
   return rebound;
 }
 
-function remapEdgeKey(key, axis, index) {
+function remapEdgeKey(key: string, axis: Axis, index: number): string | null {
   const edge = parseEdgeKey(key);
   if (axis === "x") {
     if (edge.dir === "h") {
@@ -478,8 +544,8 @@ function remapEdgeKey(key, axis, index) {
   return key;
 }
 
-export function remapEdgeSet(edgeSet, axis, index) {
-  const next = new Set();
+export function remapEdgeSet(edgeSet: ReadonlySet<string>, axis: Axis, index: number): Set<string> {
+  const next = new Set<string>();
   for (const key of edgeSet) {
     const mapped = remapEdgeKey(key, axis, index);
     if (mapped) next.add(mapped);
@@ -487,11 +553,17 @@ export function remapEdgeSet(edgeSet, axis, index) {
   return next;
 }
 
-export function remapDoors(doors, axis, index, oldPositions, newPositions) {
-  const removedStart = oldPositions[index];
+export function remapDoors(
+  doors: readonly Door[],
+  axis: Axis,
+  index: number,
+  oldPositions: readonly number[],
+  newPositions: readonly number[],
+): Door[] {
+  const removedStart = oldPositions[index] ?? 0;
   const removedEnd = oldPositions[index + 1];
   const removedLength = removedEnd - removedStart;
-  const next = [];
+  const next: Door[] = [];
   for (const door of doors) {
     const alongAxis = door.dir === "h" ? "x" : "y";
     if (alongAxis !== axis) {
@@ -509,10 +581,10 @@ export function remapDoors(doors, axis, index, oldPositions, newPositions) {
   return next;
 }
 
-export function remapLabelCells(labels, axis, index) {
-  const next = [];
+export function remapLabelCells(labels: readonly Label[], axis: Axis, index: number): Label[] {
+  const next: Label[] = [];
   for (const label of labels) {
-    const cells = [];
+    const cells: string[] = [];
     for (const key of label.cells) {
       let [column, row] = key.split(",").map(Number);
       if (axis === "x") {
