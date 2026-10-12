@@ -1,6 +1,6 @@
 export type Axis = "x" | "y";
 export type Direction = "h" | "v";
-export type Tool = "select" | "wall" | "erase" | "door" | "window" | "label";
+export type Tool = "select" | "wall" | "erase" | "door" | "window" | "slide" | "label";
 export type Hinge = "low" | "high";
 export type Side = 1 | -1;
 
@@ -26,6 +26,7 @@ export interface PlanState {
   hEdges: Set<string>;
   vEdges: Set<string>;
   windowEdges: Set<string>;
+  slidingEdges: Set<string>;
   doors: Door[];
   labels: Label[];
   nextId: number;

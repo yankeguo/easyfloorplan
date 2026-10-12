@@ -17,6 +17,7 @@ import {
   settleSequences,
   setSpaceLabel,
   spacesOf,
+  toggleSlide,
   toggleWindow,
 } from "./model.ts";
 
@@ -190,4 +191,20 @@ test("window toggle marks one bay and leaves the rest of the wall", () => {
   assert.equal(state.windowEdges.has("v:3:1"), false);
   toggleWindow(state, run.dir, run.line, run.start);
   assert.equal(state.windowEdges.has("v:3:0"), false);
+});
+
+test("a sliding door mark covers one bay and replaces a window there", () => {
+  const state = createSample();
+  assert.equal(state.windowEdges.has("h:0:0"), true);
+  toggleSlide(state, "h", 0, 0);
+  assert.equal(state.slidingEdges.has("h:0:0"), true);
+  assert.equal(state.windowEdges.has("h:0:0"), false);
+  assert.equal(state.windowEdges.has("h:0:1"), true);
+  assert.equal(state.slidingEdges.has("h:0:1"), false);
+  toggleWindow(state, "h", 0, 0);
+  assert.equal(state.windowEdges.has("h:0:0"), true);
+  assert.equal(state.slidingEdges.has("h:0:0"), false);
+  toggleSlide(state, "v", 3, 0);
+  assert.equal(state.slidingEdges.has("v:3:0"), true);
+  assert.equal(state.slidingEdges.has("v:3:1"), false);
 });

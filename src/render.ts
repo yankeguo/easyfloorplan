@@ -63,7 +63,7 @@ function fillBand(
 interface WallPiece {
   from: number;
   to: number;
-  window: boolean;
+  kind: "solid" | "window" | "slide";
 }
 
 function wallPieces(run: Run, state: PlanState, positions: readonly number[]): WallPiece[] {
@@ -72,7 +72,12 @@ function wallPieces(run: Run, state: PlanState, positions: readonly number[]): W
     const from = positions[index];
     const to = positions[index + 1];
     if (from == null || to == null) continue;
-    const isWindow = state.windowEdges.has(`${run.dir}:${run.line}:${index}`);
+    const key = `${run.dir}:${run.line}:${index}`;
+    const kind: WallPiece["kind"] = state.slidingEdges.has(key)
+      ? "slide"
+      : state.windowEdges.has(key)
+        ? "window"
+        : "solid";
     const cuts = state.doors
       .filter((door) => door.dir === run.dir && door.line === run.line)
       .map((door) => doorSpanMeters(door, positions))
@@ -81,15 +86,15 @@ function wallPieces(run: Run, state: PlanState, positions: readonly number[]): W
       .sort((a, b) => a[0] - b[0]);
     let cursor = from;
     for (const [cutFrom, cutTo] of cuts) {
-      if (cutFrom > cursor + 1e-6) raw.push({ from: cursor, to: cutFrom, window: isWindow });
+      if (cutFrom > cursor + 1e-6) raw.push({ from: cursor, to: cutFrom, kind });
       cursor = Math.max(cursor, cutTo);
     }
-    if (to > cursor + 1e-6) raw.push({ from: cursor, to, window: isWindow });
+    if (to > cursor + 1e-6) raw.push({ from: cursor, to, kind });
   }
   const merged: WallPiece[] = [];
   for (const piece of raw) {
     const previous = merged[merged.length - 1];
-    if (previous && previous.window === piece.window && Math.abs(previous.to - piece.from) <= 1e-6) {
+    if (previous && previous.kind === piece.kind && Math.abs(previous.to - piece.from) <= 1e-6) {
       previous.to = piece.to;
     } else {
       merged.push({ ...piece });
@@ -134,6 +139,49 @@ function strokeBand(
   ctx.moveTo(corners[0].x, corners[0].y);
   for (const point of corners.slice(1)) ctx.lineTo(point.x, point.y);
   ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSlide(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  dir: Direction,
+  cross: number,
+  start: number,
+  end: number,
+  selected: boolean,
+): void {
+  const half = WALL_THICKNESS / 2;
+  const from = Math.min(start, end);
+  const to = Math.max(start, end);
+  const mid = (from + to) / 2;
+  const color = selected ? TEAL : INK;
+  fillBand(ctx, view, dir, cross, from, to, WALL_THICKNESS, PAPER, 0.4);
+  if (dir === "h") {
+    fillWorldRect(ctx, view, from, cross - half, mid - from, half, color, 0);
+    fillWorldRect(ctx, view, mid, cross, to - mid, half, color, 0);
+  } else {
+    fillWorldRect(ctx, view, cross - half, from, half, mid - from, color, 0);
+    fillWorldRect(ctx, view, cross, mid, half, to - mid, color, 0);
+  }
+  strokeBand(ctx, view, dir, cross, from, to, WALL_THICKNESS, color);
+  const across =
+    dir === "h"
+      ? [worldToScreen(mid, cross - half, view), worldToScreen(mid, cross + half, view)]
+      : [worldToScreen(cross - half, mid, view), worldToScreen(cross + half, mid, view)];
+  const along =
+    dir === "h"
+      ? [worldToScreen(from, cross, view), worldToScreen(to, cross, view)]
+      : [worldToScreen(cross, from, view), worldToScreen(cross, to, view)];
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.25, view.ppm * 10);
+  ctx.beginPath();
+  ctx.moveTo(across[0].x, across[0].y);
+  ctx.lineTo(across[1].x, across[1].y);
+  ctx.moveTo(along[0].x, along[0].y);
+  ctx.lineTo(along[1].x, along[1].y);
   ctx.stroke();
   ctx.restore();
 }
@@ -290,7 +338,7 @@ function drawJoints(
       const horizontal = [`h:${yi}:${xi - 1}`, `h:${yi}:${xi}`].filter((key) => state.hEdges.has(key));
       const vertical = [`v:${xi}:${yi - 1}`, `v:${xi}:${yi}`].filter((key) => state.vEdges.has(key));
       if (horizontal.length === 0 || vertical.length === 0) continue;
-      if ([...horizontal, ...vertical].every((key) => state.windowEdges.has(key))) continue;
+      if ([...horizontal, ...vertical].every((key) => state.windowEdges.has(key) || state.slidingEdges.has(key))) continue;
       if (
         nearDoor(state.doors, "h", yi, xPos[xi], xPos) ||
         nearDoor(state.doors, "v", xi, yPos[yi], yPos)
@@ -543,7 +591,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
     const positions = run.dir === "h" ? xPos : yPos;
     const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
     for (const piece of wallPieces(run, state, positions)) {
-      if (piece.window) continue;
+      if (piece.kind !== "solid") continue;
       fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS + 80, TEAL, 0);
     }
   }
@@ -552,7 +600,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
     const positions = run.dir === "h" ? xPos : yPos;
     const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
     for (const piece of wallPieces(run, state, positions)) {
-      if (piece.window) continue;
+      if (piece.kind !== "solid") continue;
       fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, INK, 0.45);
     }
   }
@@ -562,9 +610,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
     const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
     const selected = runKey(run) === selectedWall;
     for (const piece of wallPieces(run, state, positions)) {
-      if (!piece.window) continue;
-      fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, PAPER, 0.4);
-      strokeBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, selected ? TEAL : INK);
+      if (piece.kind === "window") {
+        fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, PAPER, 0.4);
+        strokeBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, selected ? TEAL : INK);
+      } else if (piece.kind === "slide") {
+        drawSlide(ctx, view, run.dir, cross, piece.from, piece.to, selected);
+      }
     }
   }
 

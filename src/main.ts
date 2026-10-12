@@ -36,6 +36,7 @@ import {
   setSpaceLabel,
   settleSequences,
   spacesOf,
+  toggleSlide,
   toggleWindow,
 } from "./model.ts";
 import { drawScene, hitTest } from "./render.ts";
@@ -64,7 +65,7 @@ function required<T extends Element>(id: string, kind: abstract new (...args: ne
 }
 
 function isTool(value: string | undefined): value is Tool {
-  return value === "select" || value === "wall" || value === "erase" || value === "door" || value === "window" || value === "label";
+  return value === "select" || value === "wall" || value === "erase" || value === "door" || value === "window" || value === "slide" || value === "label";
 }
 
 function isAxis(value: string | undefined): value is Axis {
@@ -89,10 +90,19 @@ const HINTS = {
   erase: "依次点击两个交叉点，去掉它们之间的墙。",
   door: "在墙面上点击，留出 800 mm 宽的门洞。拖动可改位置。",
   window: "点击相邻两条参考线之间的一段墙，只把这一段标成窗。再点一次取消。",
+  slide: "点击相邻两条参考线之间的一段墙，只把这一段标成推拉门。再点一次取消。",
   label: "点击一个空间，为它填写名称。",
 };
 
-const TOOL_KEYS: Record<string, Tool> = { v: "select", w: "wall", e: "erase", d: "door", n: "window", l: "label" };
+const TOOL_KEYS: Record<string, Tool> = {
+  v: "select",
+  w: "wall",
+  e: "erase",
+  d: "door",
+  n: "window",
+  s: "slide",
+  l: "label",
+};
 const STORAGE_KEY = "easyfloorplan.v1";
 
 const canvas = required("plan", HTMLCanvasElement);
@@ -543,12 +553,15 @@ function renderSelection(): void {
       (door) => door.dir === run.dir && door.line === run.line && door.anchor >= run.start && door.anchor < run.end,
     ).length;
     const title = run.dir === "h" ? `横向参考线 ${yAxisName(run.line)}` : `竖向参考线 ${xAxisName(run.line)}`;
-    const windowChecks: string[] = [];
+    const segmentChecks: string[] = [];
     for (let index = run.start; index < run.end; index += 1) {
-      const on = app.state.windowEdges.has(`${run.dir}:${run.line}:${index}`);
-      const name = run.end - run.start === 1 ? "这面墙有窗" : `第 ${index - run.start + 1} 段有窗`;
-      windowChecks.push(
-        `<label class="check"><input type="checkbox" data-action="toggle-window" data-index="${index}" ${on ? "checked" : ""} />${name}</label>`,
+      const key = `${run.dir}:${run.line}:${index}`;
+      const windowOn = app.state.windowEdges.has(key);
+      const slideOn = app.state.slidingEdges.has(key);
+      const prefix = run.end - run.start === 1 ? "这面墙" : `第 ${index - run.start + 1} 段`;
+      segmentChecks.push(
+        `<label class="check"><input type="checkbox" data-action="toggle-window" data-index="${index}" ${windowOn ? "checked" : ""} />${prefix}有窗</label>`,
+        `<label class="check"><input type="checkbox" data-action="toggle-slide" data-index="${index}" ${slideOn ? "checked" : ""} />${prefix}是推拉门</label>`,
       );
     }
     mount.innerHTML = `
@@ -556,7 +569,7 @@ function renderSelection(): void {
         <h3>${title} 上的墙</h3>
         <p>长度 ${formatMm(length)} mm · 门 ${doorCount} 扇</p>
         ${length < DOOR_WIDTH ? `<p>这面墙不到 ${DOOR_WIDTH} mm，不能开门。</p>` : ""}
-        ${windowChecks.join("")}
+        ${segmentChecks.join("")}
         <div class="row"><button type="button" data-action="delete-wall">删除这面墙</button></div>
       </div>`;
     return;
@@ -662,14 +675,16 @@ function onSidebarClick(event: MouseEvent): void {
 
 function onSidebarChange(event: Event): void {
   const input = event.target;
-  if (!(input instanceof HTMLInputElement) || input.dataset.action !== "toggle-window") return;
+  const action = input instanceof HTMLInputElement ? input.dataset.action : undefined;
+  if (action !== "toggle-window" && action !== "toggle-slide") return;
   const selection = app.selection;
   if (selection?.type !== "wall") return;
   const run = runByKey(app.state, selection.key);
   if (!run) return;
-  const index = Number(input.dataset.index);
+  const index = Number(input instanceof HTMLInputElement ? input.dataset.index : undefined);
   if (!Number.isInteger(index) || index < run.start || index >= run.end) return;
-  mutate(() => toggleWindow(app.state, run.dir, run.line, index));
+  if (action === "toggle-window") mutate(() => toggleWindow(app.state, run.dir, run.line, index));
+  else mutate(() => toggleSlide(app.state, run.dir, run.line, index));
   refresh();
 }
 
@@ -970,14 +985,15 @@ function onPointerDown(event: PointerEvent): void {
     return;
   }
 
-  if (app.tool === "window" && hit.wall) {
+  if ((app.tool === "window" || app.tool === "slide") && hit.wall) {
     const wall = hit.wall;
     const positions = wall.run.dir === "h" ? positionsOf(app.state).x : positionsOf(app.state).y;
     let index = wall.run.start;
     for (let cursor = wall.run.start; cursor < wall.run.end; cursor += 1) {
       if (wall.meter + 1e-6 >= positions[cursor]) index = cursor;
     }
-    mutate(() => toggleWindow(app.state, wall.run.dir, wall.run.line, index));
+    if (app.tool === "window") mutate(() => toggleWindow(app.state, wall.run.dir, wall.run.line, index));
+    else mutate(() => toggleSlide(app.state, wall.run.dir, wall.run.line, index));
     app.selection = { type: "wall", key: runKey(wall.run) };
     refresh();
     return;
@@ -1305,7 +1321,7 @@ function updateCursor(hit: Hit): void {
     canvas.style.cursor = hit.space ? "text" : "default";
     return;
   }
-  if (app.tool === "door" || app.tool === "window") {
+  if (app.tool === "door" || app.tool === "window" || app.tool === "slide") {
     canvas.style.cursor = hit.wall || hit.door ? "pointer" : "default";
     return;
   }

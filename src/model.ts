@@ -33,6 +33,7 @@ export function emptyState(): PlanState {
     hEdges: new Set(),
     vEdges: new Set(),
     windowEdges: new Set(),
+    slidingEdges: new Set(),
     doors: [],
     labels: [],
     nextId: 1,
@@ -69,6 +70,12 @@ export function normalize(state: PlanState): PlanState {
     const dir = key.slice(0, 1);
     const walls = dir === "h" ? state.hEdges : state.vEdges;
     if (!walls.has(key)) state.windowEdges.delete(key);
+  }
+  for (const key of [...state.slidingEdges]) {
+    const dir = key.slice(0, 1);
+    const walls = dir === "h" ? state.hEdges : state.vEdges;
+    if (!walls.has(key)) state.slidingEdges.delete(key);
+    else state.windowEdges.delete(key);
   }
   const { x, y } = positionsOf(state);
   state.doors = normalizeDoors(state.doors, state.hEdges, state.vEdges, x, y);
@@ -114,6 +121,7 @@ export function serialize(state: PlanState): string {
     hEdges: [...state.hEdges].sort(),
     vEdges: [...state.vEdges].sort(),
     windowEdges: [...state.windowEdges].sort(),
+    slidingEdges: [...state.slidingEdges].sort(),
     doors: state.doors
       .map((door) => ({ ...door }))
       .sort((a, b) => String(a.id).localeCompare(String(b.id))),
@@ -140,6 +148,7 @@ export function deserialize(raw: string | SavedPlan): PlanState {
   state.hEdges = new Set(data.hEdges || []);
   state.vEdges = new Set(data.vEdges || []);
   state.windowEdges = new Set(data.windowEdges || []);
+  state.slidingEdges = new Set(data.slidingEdges || []);
   state.doors = (data.doors || []).map((door) => ({
     ...door,
     local: legacy ? Math.round(Number(door.local) * 1000) : Number(door.local),
@@ -169,6 +178,7 @@ interface SavedPlan {
   hEdges?: string[];
   vEdges?: string[];
   windowEdges?: string[];
+  slidingEdges?: string[];
   doors?: SavedDoor[];
   labels?: Label[];
   nextId?: number;
@@ -273,6 +283,7 @@ export function settleSequences(state: PlanState, axis: Axis, sequences: unknown
   state.hEdges = retargetEdges(state.hEdges, oldX, oldY, newX, newY);
   state.vEdges = retargetEdges(state.vEdges, oldX, oldY, newX, newY);
   state.windowEdges = retargetEdges(state.windowEdges, oldX, oldY, newX, newY);
+  state.slidingEdges = retargetEdges(state.slidingEdges, oldX, oldY, newX, newY);
   state.doors = retargetDoors(state.doors, oldX, oldY, newX, newY);
   state.labels = retargetLabelCells(state.labels, oldX, oldY, newX, newY);
   return { ok: true, changed: true, intervals };
@@ -371,6 +382,7 @@ export function removeIntervalAt(state: PlanState, axis: Axis, index: number): A
   state.hEdges = remapEdgeSet(state.hEdges, axis, index);
   state.vEdges = remapEdgeSet(state.vEdges, axis, index);
   state.windowEdges = remapEdgeSet(state.windowEdges, axis, index);
+  state.slidingEdges = remapEdgeSet(state.slidingEdges, axis, index);
   state.doors = remapDoors(state.doors, axis, index, oldPositions, newPositions);
   state.labels = remapLabelCells(state.labels, axis, index);
   return { ok: true };
@@ -393,6 +405,7 @@ export function applyGridSpan(
   if (mode === "erase") {
     removeSpan(edges, span.dir, span.line, span.start, span.end);
     removeSpan(state.windowEdges, span.dir, span.line, span.start, span.end);
+    removeSpan(state.slidingEdges, span.dir, span.line, span.start, span.end);
     return { ok: true, span };
   }
   addSpan(edges, span.dir, span.line, span.start, span.end);
@@ -403,6 +416,7 @@ export function clearDrawing(state: PlanState): void {
   state.hEdges = new Set();
   state.vEdges = new Set();
   state.windowEdges = new Set();
+  state.slidingEdges = new Set();
   state.doors = [];
   state.labels = [];
 }
@@ -420,8 +434,25 @@ export function toggleWindow(state: PlanState, dir: Run["dir"], line: number, in
   const key = edgeKey(dir, line, index);
   if (!edgesFor(state, dir).has(key)) return { ok: false, message: "这里没有墙" };
   const turningOn = !state.windowEdges.has(key);
-  if (turningOn) state.windowEdges.add(key);
-  else state.windowEdges.delete(key);
+  if (turningOn) {
+    state.windowEdges.add(key);
+    state.slidingEdges.delete(key);
+  } else {
+    state.windowEdges.delete(key);
+  }
+  return { ok: true, on: turningOn };
+}
+
+export function toggleSlide(state: PlanState, dir: Run["dir"], line: number, index: number): ActionResult {
+  const key = edgeKey(dir, line, index);
+  if (!edgesFor(state, dir).has(key)) return { ok: false, message: "这里没有墙" };
+  const turningOn = !state.slidingEdges.has(key);
+  if (turningOn) {
+    state.slidingEdges.add(key);
+    state.windowEdges.delete(key);
+  } else {
+    state.slidingEdges.delete(key);
+  }
   return { ok: true, on: turningOn };
 }
 
@@ -489,6 +520,7 @@ export function deleteDoor(state: PlanState, id: string): ActionResult {
 export function deleteRun(state: PlanState, run: Run): ActionResult {
   removeSpan(edgesFor(state, run.dir), run.dir, run.line, run.start, run.end);
   removeSpan(state.windowEdges, run.dir, run.line, run.start, run.end);
+  removeSpan(state.slidingEdges, run.dir, run.line, run.start, run.end);
   return { ok: true };
 }
 
