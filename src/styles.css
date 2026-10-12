@@ -95,6 +95,14 @@ header button:hover, .footer-actions button:hover, .add:hover, .selection button
 
 .primary:hover { background: var(--teal-dark); }
 
+#clear {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+}
+
+#clear:hover { background: #7c2a0e; border-color: #7c2a0e; }
+
 .workspace {
   flex: 1;
   min-height: 0;

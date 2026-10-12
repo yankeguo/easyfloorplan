@@ -1494,7 +1494,8 @@ function clearPlan(): void {
       app.state.bayCells.size ===
     0;
   if (empty) return;
-  if (!window.confirm("清空墙体、门、窗、飘窗和标签？间隔会保留，可以用撤销恢复。")) return;
+  if (!window.confirm("清空墙体、门、窗、推拉门、飘窗和标签？间隔会保留，可以用撤销恢复。")) return;
+  if (!window.confirm("再次确认：这些内容会被清掉。确定继续？")) return;
   const previous = serialize(app.state);
   clearDrawing(app.state);
   normalize(app.state);
