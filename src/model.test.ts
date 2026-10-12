@@ -17,6 +17,7 @@ import {
   settleSequences,
   setSpaceLabel,
   spacesOf,
+  toggleBay,
   toggleSlide,
   toggleWindow,
 } from "./model.ts";
@@ -191,6 +192,19 @@ test("window toggle marks one bay and leaves the rest of the wall", () => {
   assert.equal(state.windowEdges.has("v:3:1"), false);
   toggleWindow(state, run.dir, run.line, run.start);
   assert.equal(state.windowEdges.has("v:3:0"), false);
+});
+
+test("bay window marks stay on the chosen floor cells", () => {
+  const state = createSample();
+  toggleBay(state, 0, 0);
+  toggleBay(state, 2, 1);
+  assert.deepEqual([...state.bayCells].sort(), ["0,0", "2,1"]);
+  toggleBay(state, 0, 0);
+  assert.equal(state.bayCells.has("0,0"), false);
+  assert.equal(state.bayCells.has("2,1"), true);
+  assert.equal(toggleBay(state, 9, 9).ok, false);
+  removeIntervalAt(state, "x", 2);
+  assert.equal(state.bayCells.has("2,1"), false);
 });
 
 test("a sliding door mark covers one bay and replaces a window there", () => {

@@ -35,6 +35,7 @@ export function emptyState(): PlanState {
     vEdges: new Set(),
     windowEdges: new Set(),
     slidingEdges: new Set(),
+    bayCells: new Set(),
     doors: [],
     labels: [],
     nextId: 1,
@@ -76,6 +77,14 @@ export function normalize(state: PlanState): PlanState {
     const walls = dir === "h" ? state.hEdges : state.vEdges;
     if (!walls.has(key)) state.slidingEdges.delete(key);
     else state.windowEdges.delete(key);
+  }
+  const cols = state.xIntervals.length;
+  const rows = state.yIntervals.length;
+  for (const key of [...state.bayCells]) {
+    const [column, row] = key.split(",").map(Number);
+    if (!Number.isInteger(column) || !Number.isInteger(row) || column < 0 || row < 0 || column >= cols || row >= rows) {
+      state.bayCells.delete(key);
+    }
   }
   const { x, y } = positionsOf(state);
   state.doors = normalizeDoors(state.doors, state.hEdges, state.vEdges, x, y);
@@ -122,6 +131,7 @@ export function serialize(state: PlanState): string {
     vEdges: [...state.vEdges].sort(),
     windowEdges: [...state.windowEdges].sort(),
     slidingEdges: [...state.slidingEdges].sort(),
+    bayCells: [...state.bayCells].sort(),
     doors: state.doors
       .map((door) => ({ ...door }))
       .sort((a, b) => String(a.id).localeCompare(String(b.id))),
@@ -149,6 +159,7 @@ export function deserialize(raw: string | SavedPlan): PlanState {
   state.vEdges = new Set(data.vEdges || []);
   state.windowEdges = new Set(data.windowEdges || []);
   state.slidingEdges = new Set(data.slidingEdges || []);
+  state.bayCells = new Set(data.bayCells || []);
   state.doors = (data.doors || []).map((door) => ({
     ...door,
     local: legacy ? Math.round(Number(door.local) * 1000) : Number(door.local),
@@ -179,6 +190,7 @@ interface SavedPlan {
   vEdges?: string[];
   windowEdges?: string[];
   slidingEdges?: string[];
+  bayCells?: string[];
   doors?: SavedDoor[];
   labels?: Label[];
   nextId?: number;
@@ -284,6 +296,7 @@ export function settleSequences(state: PlanState, axis: Axis, sequences: unknown
   state.vEdges = retargetEdges(state.vEdges, oldX, oldY, newX, newY);
   state.windowEdges = retargetEdges(state.windowEdges, oldX, oldY, newX, newY);
   state.slidingEdges = retargetEdges(state.slidingEdges, oldX, oldY, newX, newY);
+  state.bayCells = retargetBayCells(state.bayCells, oldX, oldY, newX, newY);
   state.doors = retargetDoors(state.doors, oldX, oldY, newX, newY);
   state.labels = retargetLabelCells(state.labels, oldX, oldY, newX, newY);
   return { ok: true, changed: true, intervals };
@@ -372,6 +385,51 @@ function retargetLabelCells(
   return next;
 }
 
+function retargetBayCells(
+  cells: ReadonlySet<string>,
+  oldX: readonly number[],
+  oldY: readonly number[],
+  newX: readonly number[],
+  newY: readonly number[],
+): Set<string> {
+  const next = new Set<string>();
+  for (const key of cells) {
+    const [column, row] = key.split(",").map(Number);
+    if (column < 0 || row < 0 || column + 1 >= oldX.length || row + 1 >= oldY.length) continue;
+    const x0 = oldX[column] ?? 0;
+    const x1 = oldX[column + 1] ?? x0;
+    const y0 = oldY[row] ?? 0;
+    const y1 = oldY[row + 1] ?? y0;
+    for (let nextColumn = 0; nextColumn < newX.length - 1; nextColumn += 1) {
+      const midX = ((newX[nextColumn] ?? 0) + (newX[nextColumn + 1] ?? 0)) / 2;
+      if (midX <= x0 + 1e-6 || midX >= x1 - 1e-6) continue;
+      for (let nextRow = 0; nextRow < newY.length - 1; nextRow += 1) {
+        const midY = ((newY[nextRow] ?? 0) + (newY[nextRow + 1] ?? 0)) / 2;
+        if (midY <= y0 + 1e-6 || midY >= y1 - 1e-6) continue;
+        next.add(`${nextColumn},${nextRow}`);
+      }
+    }
+  }
+  return next;
+}
+
+function remapBayCells(cells: ReadonlySet<string>, axis: Axis, index: number): Set<string> {
+  const next = new Set<string>();
+  for (const key of cells) {
+    let [column, row] = key.split(",").map(Number);
+    if (!Number.isInteger(column) || !Number.isInteger(row)) continue;
+    if (axis === "x") {
+      if (column === index) continue;
+      if (column > index) column -= 1;
+    } else {
+      if (row === index) continue;
+      if (row > index) row -= 1;
+    }
+    next.add(`${column},${row}`);
+  }
+  return next;
+}
+
 export function removeIntervalAt(state: PlanState, axis: Axis, index: number): ActionResult {
   const list = intervalList(state, axis);
   if (list.length <= 1) return { ok: false, message: "至少保留一段间隔" };
@@ -383,6 +441,7 @@ export function removeIntervalAt(state: PlanState, axis: Axis, index: number): A
   state.vEdges = remapEdgeSet(state.vEdges, axis, index);
   state.windowEdges = remapEdgeSet(state.windowEdges, axis, index);
   state.slidingEdges = remapEdgeSet(state.slidingEdges, axis, index);
+  state.bayCells = remapBayCells(state.bayCells, axis, index);
   state.doors = remapDoors(state.doors, axis, index, oldPositions, newPositions);
   state.labels = remapLabelCells(state.labels, axis, index);
   return { ok: true };
@@ -417,6 +476,7 @@ export function clearDrawing(state: PlanState): void {
   state.vEdges = new Set();
   state.windowEdges = new Set();
   state.slidingEdges = new Set();
+  state.bayCells = new Set();
   state.doors = [];
   state.labels = [];
 }
@@ -440,6 +500,17 @@ export function toggleWindow(state: PlanState, dir: Run["dir"], line: number, in
   } else {
     state.windowEdges.delete(key);
   }
+  return { ok: true, on: turningOn };
+}
+
+export function toggleBay(state: PlanState, column: number, row: number): ActionResult {
+  if (column < 0 || row < 0 || column >= state.xIntervals.length || row >= state.yIntervals.length) {
+    return { ok: false, message: "这里没有地板" };
+  }
+  const key = `${column},${row}`;
+  const turningOn = !state.bayCells.has(key);
+  if (turningOn) state.bayCells.add(key);
+  else state.bayCells.delete(key);
   return { ok: true, on: turningOn };
 }
 

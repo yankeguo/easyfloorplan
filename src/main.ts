@@ -36,6 +36,7 @@ import {
   setSpaceLabel,
   settleSequences,
   spacesOf,
+  toggleBay,
   toggleSlide,
   toggleWindow,
 } from "./model.ts";
@@ -65,7 +66,16 @@ function required<T extends Element>(id: string, kind: abstract new (...args: ne
 }
 
 function isTool(value: string | undefined): value is Tool {
-  return value === "select" || value === "wall" || value === "erase" || value === "door" || value === "window" || value === "slide" || value === "label";
+  return (
+    value === "select" ||
+    value === "wall" ||
+    value === "erase" ||
+    value === "door" ||
+    value === "window" ||
+    value === "slide" ||
+    value === "bay" ||
+    value === "label"
+  );
 }
 
 function isAxis(value: string | undefined): value is Axis {
@@ -91,6 +101,7 @@ const HINTS = {
   door: "在墙面上点击，留出 800 mm 宽的门洞。拖动可改位置。",
   window: "点击相邻两条参考线之间的一段墙，只把这一段标成窗。再点一次取消。",
   slide: "点击相邻两条参考线之间的一段墙，只把这一段标成推拉门。再点一次取消。",
+  bay: "点击一块地板，把它标成飘窗。可以标多块，再点一次取消。",
   label: "点击一个空间，为它填写名称。",
 };
 
@@ -101,6 +112,7 @@ const TOOL_KEYS: Record<string, Tool> = {
   d: "door",
   n: "window",
   s: "slide",
+  b: "bay",
   l: "label",
 };
 const STORAGE_KEY = "easyfloorplan.v1";
@@ -598,10 +610,16 @@ function renderSelection(): void {
   const { x, y } = positionsOf(app.state);
   const area = spaceNetArea(space, x, y, app.state.hEdges, app.state.vEdges) / 1_000_000;
   const label = labelForSpace(app.state, space);
+  const bayChecks = space.cells.map((cell, index) => {
+    const on = app.state.bayCells.has(`${cell.c},${cell.r}`);
+    const name = space.cells.length === 1 ? "这块地板是飘窗" : `第 ${index + 1} 块地板是飘窗`;
+    return `<label class="check"><input type="checkbox" data-action="toggle-bay" data-column="${cell.c}" data-row="${cell.r}" ${on ? "checked" : ""} />${name}</label>`;
+  });
   mount.innerHTML = `
     <div class="selection">
       <h3 data-label-text>${label ? escapeHtml(label.text) : "未命名"}</h3>
       <p>净面积 ${area.toFixed(2)} ㎡，按墙内皮计算。</p>
+      ${bayChecks.join("")}
       <div class="row">
         <button type="button" data-action="edit-label">编辑标签</button>
         ${label ? '<button type="button" data-action="clear-label">清除标签</button>' : ""}
@@ -675,13 +693,22 @@ function onSidebarClick(event: MouseEvent): void {
 
 function onSidebarChange(event: Event): void {
   const input = event.target;
-  const action = input instanceof HTMLInputElement ? input.dataset.action : undefined;
+  if (!(input instanceof HTMLInputElement)) return;
+  if (input.dataset.action === "toggle-bay") {
+    const column = Number(input.dataset.column);
+    const row = Number(input.dataset.row);
+    if (!Number.isInteger(column) || !Number.isInteger(row)) return;
+    mutate(() => toggleBay(app.state, column, row));
+    refresh();
+    return;
+  }
+  const action = input.dataset.action;
   if (action !== "toggle-window" && action !== "toggle-slide") return;
   const selection = app.selection;
   if (selection?.type !== "wall") return;
   const run = runByKey(app.state, selection.key);
   if (!run) return;
-  const index = Number(input instanceof HTMLInputElement ? input.dataset.index : undefined);
+  const index = Number(input.dataset.index);
   if (!Number.isInteger(index) || index < run.start || index >= run.end) return;
   if (action === "toggle-window") mutate(() => toggleWindow(app.state, run.dir, run.line, index));
   else mutate(() => toggleSlide(app.state, run.dir, run.line, index));
@@ -959,6 +986,13 @@ function onPointerDown(event: PointerEvent): void {
   if (app.tool === "label" && hit.space) {
     event.preventDefault();
     app.pendingLabel = hit.space;
+    return;
+  }
+  if (app.tool === "bay" && hit.cell) {
+    const cell = hit.cell;
+    mutate(() => toggleBay(app.state, cell.c, cell.r));
+    app.selection = hit.space ? { type: "space", key: hit.space.key } : null;
+    refresh();
     return;
   }
 
@@ -1321,6 +1355,10 @@ function updateCursor(hit: Hit): void {
     canvas.style.cursor = hit.space ? "text" : "default";
     return;
   }
+  if (app.tool === "bay") {
+    canvas.style.cursor = hit.cell ? "pointer" : "default";
+    return;
+  }
   if (app.tool === "door" || app.tool === "window" || app.tool === "slide") {
     canvas.style.cursor = hit.wall || hit.door ? "pointer" : "default";
     return;
@@ -1363,9 +1401,14 @@ function loadSample(): void {
 
 function clearPlan(): void {
   const empty =
-    app.state.hEdges.size + app.state.vEdges.size + app.state.doors.length + app.state.labels.length === 0;
+    app.state.hEdges.size +
+      app.state.vEdges.size +
+      app.state.doors.length +
+      app.state.labels.length +
+      app.state.bayCells.size ===
+    0;
   if (empty) return;
-  if (!window.confirm("清空墙体、门、窗和标签？间隔会保留，可以用撤销恢复。")) return;
+  if (!window.confirm("清空墙体、门、窗、飘窗和标签？间隔会保留，可以用撤销恢复。")) return;
   const previous = serialize(app.state);
   clearDrawing(app.state);
   normalize(app.state);

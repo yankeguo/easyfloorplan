@@ -375,6 +375,74 @@ function nearDoor(
   return false;
 }
 
+function drawBayFloors(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  state: PlanState,
+  xPos: readonly number[],
+  yPos: readonly number[],
+): void {
+  for (const key of state.bayCells) {
+    const [column, row] = key.split(",").map(Number);
+    if (!Number.isInteger(column) || !Number.isInteger(row)) continue;
+    if (column < 0 || row < 0 || column + 1 >= xPos.length || row + 1 >= yPos.length) continue;
+    const rect = cellInnerRect(column, row, xPos, yPos, state.hEdges, state.vEdges);
+    if (rect.x1 - rect.x0 < 1 || rect.y1 - rect.y0 < 1) continue;
+    fillWorldRect(ctx, view, rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0, "#f6f1e6", 0);
+    hatchRect(ctx, view, rect.x0, rect.y0, rect.x1, rect.y1);
+  }
+}
+
+function hatchRect(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  const spacing = 260;
+  const corners = [
+    worldToScreen(x0, y1, view),
+    worldToScreen(x1, y1, view),
+    worldToScreen(x1, y0, view),
+    worldToScreen(x0, y0, view),
+  ];
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(corners[0].x, corners[0].y);
+  for (const point of corners.slice(1)) ctx.lineTo(point.x, point.y);
+  ctx.closePath();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(90, 72, 48, 0.62)";
+  ctx.lineWidth = 1;
+  const start = Math.floor((x0 + y0) / spacing) * spacing;
+  const end = x1 + y1;
+  for (let sum = start; sum <= end + 1e-6; sum += spacing) {
+    const hits: { x: number; y: number }[] = [];
+    const push = (x: number, y: number) => {
+      if (x < x0 - 1e-6 || x > x1 + 1e-6 || y < y0 - 1e-6 || y > y1 + 1e-6) return;
+      const point = worldToScreen(
+        Math.min(x1, Math.max(x0, x)),
+        Math.min(y1, Math.max(y0, y)),
+        view,
+      );
+      if (hits.some((hit) => Math.hypot(hit.x - point.x, hit.y - point.y) < 0.5)) return;
+      hits.push(point);
+    };
+    push(sum - y0, y0);
+    push(sum - y1, y1);
+    push(x0, sum - x0);
+    push(x1, sum - x1);
+    if (hits.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(hits[0].x, hits[0].y);
+    ctx.lineTo(hits[1].x, hits[1].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawDoorSymbol(
   ctx: CanvasRenderingContext2D,
   view: View,
@@ -584,6 +652,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
     }
   }
 
+  drawBayFloors(ctx, view, state, xPos, yPos);
+
   drawReferenceLines(ctx, view, xPos, yPos);
 
   for (const run of runsOf(state)) {
@@ -779,5 +849,12 @@ export function hitTest(px: number, py: number, state: PlanState, view: View) {
       spacesOf(state).find((item) => item.cells.some((cell) => cell.c === column && cell.r === row)) ||
       null;
   }
-  return { world, point, door, wall, space };
+  return {
+    world,
+    point,
+    door,
+    wall,
+    space,
+    cell: column >= 0 && row >= 0 ? { c: column, r: row } : null,
+  };
 }
