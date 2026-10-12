@@ -17,6 +17,7 @@ import {
 import {
   addInterval,
   applyGridSpan,
+  centerDoor,
   clearDrawing,
   createSample,
   deleteDoor,
@@ -100,7 +101,7 @@ const HINTS = {
   select: "点选墙、门或空间。拖动空白处平移，滚轮缩放，双击空间可改标签。",
   wall: "依次点击同一条参考线上的两个交叉点。按住空格可平移。",
   erase: "依次点击两个交叉点，去掉它们之间的墙。",
-  door: "在墙面上点击，留出 800 mm 宽的门洞。拖动可改位置。",
+  door: "在墙面上点击，留出 800 mm 宽的门洞。拖动可改位置，双击可在当前这段墙上居中。",
   window: "点击相邻两条参考线之间的一段墙，只把这一段标成窗。再点一次取消。",
   slide: "点击相邻两条参考线之间的一段墙，只把这一段标成推拉门。再点一次取消。",
   bay: "点击一块地板，把它标成飘窗。可以标多块，再点一次取消。",
@@ -1049,6 +1050,7 @@ function onPointerDown(event: PointerEvent): void {
   }
 
   if (app.tool === "door") {
+    if (event.detail >= 2 && hit.door && hit.door.dist <= 8) return;
     if (hit.door && hit.door.dist <= 8) {
       app.selection = { type: "door", id: hit.door.door.id };
       beginDoorDrag(event, hit.door.door, hit.world);
@@ -1187,9 +1189,18 @@ function onPointerUp(event: PointerEvent): void {
 }
 
 function onDoubleClick(event: MouseEvent): void {
-  if (app.tool !== "select") return;
   const point = localPoint(event);
   const hit = hitTest(point.x, point.y, app.state, app.view);
+  if (app.tool === "door" && hit.door && hit.door.dist <= 8) {
+    const id = hit.door.door.id;
+    const result = mutate(() => centerDoor(app.state, id));
+    if (result.ok) {
+      app.selection = { type: "door", id };
+      refresh();
+    }
+    return;
+  }
+  if (app.tool !== "select") return;
   if (hit.space && !hit.wall && !(hit.door && hit.door.dist <= 8)) openEditor(hit.space);
 }
 

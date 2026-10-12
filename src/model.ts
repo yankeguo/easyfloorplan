@@ -570,6 +570,35 @@ export function placeDoor(state: PlanState, run: Run, centerMeter: number): Acti
   return { ok: true, id: fitted.id };
 }
 
+export function centerDoor(state: PlanState, id: string): ActionResult {
+  const door = state.doors.find((item) => item.id === id);
+  if (!door) return { ok: false, message: "找不到这扇门" };
+  const positions = axisPositions(state, door.dir);
+  const edges = edgesFor(state, door.dir);
+  const start = (positions[door.anchor] ?? 0) + door.local;
+  const end = start + DOOR_WIDTH;
+  const middle = (start + end) / 2;
+  let bay = -1;
+  let best = -1;
+  for (let index = 0; index < positions.length - 1; index += 1) {
+    if (!edges.has(edgeKey(door.dir, door.line, index))) continue;
+    const low = positions[index] ?? 0;
+    const high = positions[index + 1] ?? low;
+    const overlap = Math.min(end, high) - Math.max(start, low);
+    if (overlap <= 1e-6) continue;
+    const holdsCenter = middle >= low - 1e-6 && middle <= high + 1e-6;
+    const score = (holdsCenter ? 1_000_000 : 0) + overlap;
+    if (score > best) {
+      best = score;
+      bay = index;
+    }
+  }
+  if (bay < 0) return { ok: false, message: "这扇门不在墙上" };
+  const low = positions[bay] ?? 0;
+  const high = positions[bay + 1] ?? low;
+  return moveDoor(state, id, low + (high - low - DOOR_WIDTH) / 2);
+}
+
 export function moveDoor(state: PlanState, id: string, startMeter: number): ActionResult {
   const door = state.doors.find((item) => item.id === id);
   if (!door) return { ok: false, message: "找不到这扇门" };

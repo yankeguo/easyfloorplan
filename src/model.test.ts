@@ -4,6 +4,7 @@ import { doorSpanMeters, prefixSums, runIsWindow, spaceNetArea } from "./geometr
 import {
   addInterval,
   applyGridSpan,
+  centerDoor,
   createSample,
   deserialize,
   labelForSpace,
@@ -49,6 +50,18 @@ test("sample plan has four labeled rooms, doors and window walls", () => {
   assert.equal(net, 3780 * 4680);
   const again = deserialize(serialize(state));
   assert.equal(serialize(again), serialize(state));
+});
+
+test("centering a door puts it in the middle of its bay", () => {
+  const state = createSample();
+  const door = state.doors.find((item) => item.id === "d1");
+  assert.ok(door);
+  assert.equal(door.local, 1700);
+  const result = centerDoor(state, "d1");
+  assert.equal(result.ok, true);
+  assert.equal(door.anchor, 0);
+  assert.equal(door.local, 2000);
+  assert.equal(centerDoor(state, "missing").ok, false);
 });
 
 test("drawing a wall between living-room cells splits the label onto the larger part", () => {
