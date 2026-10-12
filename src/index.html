@@ -20,6 +20,8 @@
           <button id="undo" type="button">撤销</button>
           <button id="redo" type="button">重做</button>
           <button id="fit" type="button">适配</button>
+          <button id="sample" type="button">载入示例</button>
+          <button id="clear" type="button">清空墙体</button>
           <button id="save-json" type="button">保存 JSON</button>
           <button id="load-json-button" type="button">载入 JSON</button>
           <input id="load-json" type="file" accept="application/json,.json" hidden />
@@ -29,20 +31,9 @@
       </header>
       <div class="workspace">
         <aside id="sidebar">
-          <ol class="steps">
-            <li>填写横向、纵向间隔，生成参考线。要切得更细时，用多条序列交叉后再结算。</li>
-            <li>只在交叉点之间连墙，墙厚 120 mm。</li>
-            <li>在墙上开门、按一段一段标出窗和推拉门，再给地板标飘窗、给空间命名。</li>
-          </ol>
           <section id="panel-x"></section>
           <section id="panel-y"></section>
           <section id="readout"></section>
-          <section id="selection"></section>
-          <p class="rules">墙以参考线为中心，厚度固定 120 mm。门洞宽度固定 800 mm，不能把点放在交叉点之外。</p>
-          <div class="footer-actions">
-            <button id="sample" type="button">载入示例</button>
-            <button id="clear" type="button">清空墙体</button>
-          </div>
         </aside>
         <section class="board">
           <div class="toolbar" id="toolbar">
@@ -97,9 +88,19 @@
             </datalist>
             <div id="hint"></div>
             <div id="status"></div>
+            <section id="selection" aria-label="选中元素"></section>
             <p id="boot">正在打开户型图。</p>
           </div>
         </section>
+        <aside id="guide">
+          <h2>怎么画</h2>
+          <ol class="steps">
+            <li>填写横向、纵向间隔，生成参考线。要切得更细时，用多条序列交叉后再结算。</li>
+            <li>只在交叉点之间连墙，墙厚 120 mm。</li>
+            <li>在墙上开门、按一段一段标出窗和推拉门，再给地板标飘窗、给空间命名。</li>
+          </ol>
+          <p class="rules">墙以参考线为中心，厚度固定 120 mm。门洞宽度固定 800 mm，不能把点放在交叉点之外。选中墙、门或空间后，在画布左下角编辑。</p>
+        </aside>
       </div>
     </div>
     <dialog id="sequence-dialog">

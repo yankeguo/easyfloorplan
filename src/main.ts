@@ -260,7 +260,8 @@ required("sample", HTMLButtonElement).addEventListener("click", loadSample);
 required("clear", HTMLButtonElement).addEventListener("click", clearPlan);
 
 sidebar.addEventListener("click", onSidebarClick);
-sidebar.addEventListener("change", onSidebarChange);
+required("selection", HTMLElement).addEventListener("click", onSidebarClick);
+required("selection", HTMLElement).addEventListener("change", onSidebarChange);
 sidebar.addEventListener("focusin", (event) => {
   const input = event.target;
   if (input instanceof HTMLInputElement && input.matches("[data-axis]")) {
@@ -563,7 +564,7 @@ function renderSelection(): void {
   const selection = app.selection;
   if (!selection) {
     mount.innerHTML =
-      '<div class="selection-empty"><p>未选中墙、门或空间。</p><p>墙厚 120 mm，门洞 800 mm。</p></div>';
+      '<div class="selection-empty"><h3>选中</h3><p>点选墙、门或空间后，在这里编辑。</p></div>';
     return;
   }
   if (selection.type === "wall") {

@@ -101,13 +101,27 @@ header button:hover, .footer-actions button:hover, .add:hover, .selection button
   display: flex;
 }
 
-aside {
-  width: 332px;
+#sidebar, #guide {
   flex: none;
   overflow: auto;
   background: var(--sidebar);
-  border-right: 1px solid var(--line);
   padding: 16px 16px 24px;
+}
+
+#sidebar {
+  width: 332px;
+  border-right: 1px solid var(--line);
+}
+
+#guide {
+  width: 248px;
+  border-left: 1px solid var(--line);
+}
+
+#guide h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
 }
 
 .steps {
@@ -292,12 +306,23 @@ dialog::backdrop { background: rgba(36, 31, 27, 0.38); }
 
 .total { margin-top: 6px !important; color: var(--ink) !important; }
 
+#selection {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  bottom: 12px;
+  width: min(300px, calc(100% - 24px));
+  max-height: min(46%, 380px);
+  overflow: auto;
+}
+
 .selection-empty, .selection {
-  margin-top: 8px;
+  margin: 0;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: white;
+  background: rgba(251, 249, 245, 0.96);
+  box-shadow: 0 10px 28px rgba(36, 31, 27, 0.12);
 }
 
 .selection h3 { margin: 0 0 6px; font-size: 14px; }
@@ -313,8 +338,7 @@ dialog::backdrop { background: rgba(36, 31, 27, 0.38); }
 
 .selection .check + .check { margin-top: 6px; }
 
-.rules { margin-top: 14px; }
-.footer-actions { margin-top: 8px; }
+.rules { margin-top: 0; }
 
 .board {
   flex: 1;
@@ -428,11 +452,6 @@ canvas {
 
 #toast.show { display: block; }
 
-@media (max-width: 860px) {
-  #hint { display: none; }
-  #status { top: auto; bottom: 12px; }
-}
-
 #boot {
   position: absolute;
   inset: auto 16px 16px 16px;
@@ -443,11 +462,19 @@ canvas {
 
 @media (max-width: 860px) {
   .workspace { flex-direction: column; }
-  aside {
+  #sidebar, #guide {
     width: 100%;
-    max-height: 42vh;
+    max-height: 36vh;
     border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border-left: 0;
   }
+  #sidebar { border-bottom: 1px solid var(--line); }
+  #guide {
+    max-height: 22vh;
+    border-top: 1px solid var(--line);
+  }
+  #hint { display: none; }
+  #status { top: auto; bottom: 12px; }
+  #selection { bottom: 52px; max-height: 34%; }
   .tool kbd { display: none; }
 }
