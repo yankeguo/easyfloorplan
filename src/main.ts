@@ -257,7 +257,6 @@ required("load-json", HTMLInputElement).addEventListener("change", (event) => {
 });
 required("export-png", HTMLButtonElement).addEventListener("click", exportPng);
 required("export-svg", HTMLButtonElement).addEventListener("click", exportSvg);
-required("sample", HTMLButtonElement).addEventListener("click", loadSample);
 required("clear", HTMLButtonElement).addEventListener("click", clearPlan);
 
 sidebar.addEventListener("click", onSidebarClick);
@@ -1409,20 +1408,6 @@ function renderStatus(hit: Hit | null): void {
     message = `不在同一条参考线上 · ${message}`;
   }
   status.textContent = message;
-}
-
-function loadSample(): void {
-  if (!window.confirm("载入示例会替换当前户型。可以用撤销恢复。")) return;
-  const previous = serialize(app.state);
-  app.state = createSample();
-  app.undo.push(previous);
-  app.redo = [];
-  app.selection = null;
-  app.anchor = null;
-  app.preview = null;
-  app.viewCustom = false;
-  persist();
-  refresh({ intervals: true, refit: true });
 }
 
 function clearPlan(): void {
