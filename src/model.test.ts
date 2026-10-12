@@ -180,13 +180,14 @@ test("a saved meter drawing loads once as millimeters", () => {
   assert.equal(again.doors[0].local, 1700);
 });
 
-test("window toggle covers the whole straight wall", () => {
+test("window toggle marks one bay and leaves the rest of the wall", () => {
   const state = createSample();
   const run = runByKey(state, "v:3:0:2");
   assert.ok(run);
   assert.equal(runIsWindow(state.windowEdges, run), false);
-  toggleWindow(state, run);
-  assert.equal(runIsWindow(state.windowEdges, run), true);
-  toggleWindow(state, run);
-  assert.equal(runIsWindow(state.windowEdges, run), false);
+  toggleWindow(state, run.dir, run.line, run.start);
+  assert.equal(state.windowEdges.has("v:3:0"), true);
+  assert.equal(state.windowEdges.has("v:3:1"), false);
+  toggleWindow(state, run.dir, run.line, run.start);
+  assert.equal(state.windowEdges.has("v:3:0"), false);
 });

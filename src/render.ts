@@ -6,7 +6,6 @@ import {
   doorSpanMeters,
   formatMm,
   labelAnchor,
-  runIsWindow,
   runKey,
   xAxisName,
   yAxisName,
@@ -18,7 +17,6 @@ import { screenToWorld, worldToScreen } from "./view.ts";
 const PAPER = "#f3efe6";
 const INK = "#241f1b";
 const TEAL = "#0f6e6b";
-const WINDOW = "#1d4e89";
 const MUTED = "#8a8178";
 const SANS = '"Avenir Next", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif';
 const SPACE_FILLS = ["#e3eee7", "#f4eadc", "#e3ebf4", "#f6e4de", "#ece6f4", "#e5f0ea"];
@@ -62,34 +60,82 @@ function fillBand(
   else fillWorldRect(ctx, view, cross - half, from, thickness, length, color, bleedPx);
 }
 
-function solidPieces(run: Run, doors: readonly Door[], positions: readonly number[]): [number, number][] {
-  const start = positions[run.start];
-  const end = positions[run.end];
-  const cuts = doors
-    .filter((door) => door.dir === run.dir && door.line === run.line)
-    .map((door) => doorSpanMeters(door, positions))
-    .filter(([from, to]) => to > start + 1e-6 && from < end - 1e-6)
-    .map(([from, to]) => [Math.max(from, start), Math.min(to, end)])
-    .sort((a, b) => a[0] - b[0]);
-  const pieces: [number, number][] = [];
-  let cursor = start;
-  for (const [from, to] of cuts) {
-    if (from > cursor + 1e-6) pieces.push([cursor, from]);
-    cursor = Math.max(cursor, to);
-  }
-  if (end > cursor + 1e-6) pieces.push([cursor, end]);
-  return pieces;
+interface WallPiece {
+  from: number;
+  to: number;
+  window: boolean;
 }
 
-function exteriorSide(run: Run, columns: number, rows: number): 1 | -1 {
-  if (run.dir === "h") {
-    if (run.line === 0) return 1;
-    if (run.line === rows) return -1;
-    return 1;
+function wallPieces(run: Run, state: PlanState, positions: readonly number[]): WallPiece[] {
+  const raw: WallPiece[] = [];
+  for (let index = run.start; index < run.end; index += 1) {
+    const from = positions[index];
+    const to = positions[index + 1];
+    if (from == null || to == null) continue;
+    const isWindow = state.windowEdges.has(`${run.dir}:${run.line}:${index}`);
+    const cuts = state.doors
+      .filter((door) => door.dir === run.dir && door.line === run.line)
+      .map((door) => doorSpanMeters(door, positions))
+      .filter(([cutFrom, cutTo]) => cutTo > from + 1e-6 && cutFrom < to - 1e-6)
+      .map(([cutFrom, cutTo]): [number, number] => [Math.max(cutFrom, from), Math.min(cutTo, to)])
+      .sort((a, b) => a[0] - b[0]);
+    let cursor = from;
+    for (const [cutFrom, cutTo] of cuts) {
+      if (cutFrom > cursor + 1e-6) raw.push({ from: cursor, to: cutFrom, window: isWindow });
+      cursor = Math.max(cursor, cutTo);
+    }
+    if (to > cursor + 1e-6) raw.push({ from: cursor, to, window: isWindow });
   }
-  if (run.line === 0) return 1;
-  if (run.line === columns) return -1;
-  return 1;
+  const merged: WallPiece[] = [];
+  for (const piece of raw) {
+    const previous = merged[merged.length - 1];
+    if (previous && previous.window === piece.window && Math.abs(previous.to - piece.from) <= 1e-6) {
+      previous.to = piece.to;
+    } else {
+      merged.push({ ...piece });
+    }
+  }
+  return merged;
+}
+
+function strokeBand(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  dir: Direction,
+  cross: number,
+  start: number,
+  end: number,
+  thickness: number,
+  color: string,
+): void {
+  const half = thickness / 2;
+  const from = Math.min(start, end);
+  const length = Math.abs(end - start);
+  if (length <= 0) return;
+  const corners =
+    dir === "h"
+      ? [
+          worldToScreen(from, cross - half, view),
+          worldToScreen(from + length, cross - half, view),
+          worldToScreen(from + length, cross + half, view),
+          worldToScreen(from, cross + half, view),
+        ]
+      : [
+          worldToScreen(cross - half, from, view),
+          worldToScreen(cross + half, from, view),
+          worldToScreen(cross + half, from + length, view),
+          worldToScreen(cross - half, from + length, view),
+        ];
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.25, view.ppm * 10);
+  ctx.lineJoin = "miter";
+  ctx.beginPath();
+  ctx.moveTo(corners[0].x, corners[0].y);
+  for (const point of corners.slice(1)) ctx.lineTo(point.x, point.y);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function chipText(
@@ -241,11 +287,10 @@ function drawJoints(
   const half = (WALL_THICKNESS + extra) / 2;
   for (let xi = 0; xi < xPos.length; xi += 1) {
     for (let yi = 0; yi < yPos.length; yi += 1) {
-      const horizontal =
-        state.hEdges.has(`h:${yi}:${xi - 1}`) || state.hEdges.has(`h:${yi}:${xi}`);
-      const vertical =
-        state.vEdges.has(`v:${xi}:${yi - 1}`) || state.vEdges.has(`v:${xi}:${yi}`);
-      if (!horizontal || !vertical) continue;
+      const horizontal = [`h:${yi}:${xi - 1}`, `h:${yi}:${xi}`].filter((key) => state.hEdges.has(key));
+      const vertical = [`v:${xi}:${yi - 1}`, `v:${xi}:${yi}`].filter((key) => state.vEdges.has(key));
+      if (horizontal.length === 0 || vertical.length === 0) continue;
+      if ([...horizontal, ...vertical].every((key) => state.windowEdges.has(key))) continue;
       if (
         nearDoor(state.doors, "h", yi, xPos[xi], xPos) ||
         nearDoor(state.doors, "v", xi, yPos[yi], yPos)
@@ -280,62 +325,6 @@ function nearDoor(
     if (meter > start - reach - 0.1 && meter < end + reach + 0.1) return true;
   }
   return false;
-}
-
-function drawWindows(
-  ctx: CanvasRenderingContext2D,
-  view: View,
-  state: PlanState,
-  xPos: readonly number[],
-  yPos: readonly number[],
-): void {
-  const columns = state.xIntervals.length;
-  const rows = state.yIntervals.length;
-  for (const run of runsOf(state)) {
-    if (!runIsWindow(state.windowEdges, run)) continue;
-    const positions = run.dir === "h" ? xPos : yPos;
-    const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
-    const pieces = solidPieces(run, state.doors, positions);
-    let best = null;
-    for (const piece of pieces) {
-      if (!best || piece[1] - piece[0] > best[1] - best[0]) best = piece;
-    }
-    if (!best) continue;
-    const length = best[1] - best[0];
-    const symbol = Math.min(1600, length - 240);
-    const mid = (best[0] + best[1]) / 2;
-    if (symbol >= 360) {
-      const from = mid - symbol / 2;
-      const to = mid + symbol / 2;
-      fillBand(ctx, view, run.dir, cross, from, to, 50, "#f7f4ee", 0);
-      ctx.save();
-      ctx.strokeStyle = WINDOW;
-      ctx.lineWidth = Math.max(1, view.ppm * 12);
-      const inset = Math.min(60, symbol * 0.08);
-      for (const offset of [-18, 18]) {
-        const p0 =
-          run.dir === "h"
-            ? worldToScreen(from + inset, cross + offset, view)
-            : worldToScreen(cross + offset, from + inset, view);
-        const p1 =
-          run.dir === "h"
-            ? worldToScreen(to - inset, cross + offset, view)
-            : worldToScreen(cross + offset, to - inset, view);
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-    const side = exteriorSide(run, columns, rows);
-    const offset = WALL_THICKNESS / 2 + 280;
-    const point =
-      run.dir === "h"
-        ? worldToScreen(mid, cross + side * offset, view)
-        : worldToScreen(cross + side * offset, mid, view);
-    chipText(ctx, "窗", point.x, point.y, 0, WINDOW);
-  }
 }
 
 function drawDoorSymbol(
@@ -553,20 +542,31 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
     if (runKey(run) !== selectedWall) continue;
     const positions = run.dir === "h" ? xPos : yPos;
     const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
-    for (const [start, end] of solidPieces(run, state.doors, positions)) {
-      fillBand(ctx, view, run.dir, cross, start, end, WALL_THICKNESS + 80, TEAL, 0);
+    for (const piece of wallPieces(run, state, positions)) {
+      if (piece.window) continue;
+      fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS + 80, TEAL, 0);
     }
   }
 
   for (const run of runsOf(state)) {
     const positions = run.dir === "h" ? xPos : yPos;
     const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
-    for (const [start, end] of solidPieces(run, state.doors, positions)) {
-      fillBand(ctx, view, run.dir, cross, start, end, WALL_THICKNESS, INK, 0.45);
+    for (const piece of wallPieces(run, state, positions)) {
+      if (piece.window) continue;
+      fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, INK, 0.45);
     }
   }
   drawJoints(ctx, view, state, xPos, yPos, INK);
-  drawWindows(ctx, view, state, xPos, yPos);
+  for (const run of runsOf(state)) {
+    const positions = run.dir === "h" ? xPos : yPos;
+    const cross = run.dir === "h" ? yPos[run.line] : xPos[run.line];
+    const selected = runKey(run) === selectedWall;
+    for (const piece of wallPieces(run, state, positions)) {
+      if (!piece.window) continue;
+      fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, PAPER, 0.4);
+      strokeBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, selected ? TEAL : INK);
+    }
+  }
 
   for (const door of state.doors) {
     drawDoorSymbol(ctx, view, door, xPos, yPos, door.id === selectedDoor);

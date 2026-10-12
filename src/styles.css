@@ -311,6 +311,8 @@ dialog::backdrop { background: rgba(36, 31, 27, 0.38); }
   font-size: 13px;
 }
 
+.selection .check + .check { margin-top: 6px; }
+
 .rules { margin-top: 14px; }
 .footer-actions { margin-top: 8px; }
 

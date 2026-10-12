@@ -9,7 +9,6 @@ import {
   roundMm,
   labelAnchor,
   mergeSequences,
-  runIsWindow,
   runKey,
   spaceNetArea,
   xAxisName,
@@ -89,7 +88,7 @@ const HINTS = {
   wall: "依次点击同一条参考线上的两个交叉点。按住空格可平移。",
   erase: "依次点击两个交叉点，去掉它们之间的墙。",
   door: "在墙面上点击，留出 800 mm 宽的门洞。拖动可改位置。",
-  window: "点击一面墙，标记这面墙上有窗。再点一次取消。",
+  window: "点击相邻两条参考线之间的一段墙，只把这一段标成窗。再点一次取消。",
   label: "点击一个空间，为它填写名称。",
 };
 
@@ -544,13 +543,20 @@ function renderSelection(): void {
       (door) => door.dir === run.dir && door.line === run.line && door.anchor >= run.start && door.anchor < run.end,
     ).length;
     const title = run.dir === "h" ? `横向参考线 ${yAxisName(run.line)}` : `竖向参考线 ${xAxisName(run.line)}`;
-    const windowOn = runIsWindow(app.state.windowEdges, run);
+    const windowChecks: string[] = [];
+    for (let index = run.start; index < run.end; index += 1) {
+      const on = app.state.windowEdges.has(`${run.dir}:${run.line}:${index}`);
+      const name = run.end - run.start === 1 ? "这面墙有窗" : `第 ${index - run.start + 1} 段有窗`;
+      windowChecks.push(
+        `<label class="check"><input type="checkbox" data-action="toggle-window" data-index="${index}" ${on ? "checked" : ""} />${name}</label>`,
+      );
+    }
     mount.innerHTML = `
       <div class="selection">
         <h3>${title} 上的墙</h3>
         <p>长度 ${formatMm(length)} mm · 门 ${doorCount} 扇</p>
         ${length < DOOR_WIDTH ? `<p>这面墙不到 ${DOOR_WIDTH} mm，不能开门。</p>` : ""}
-        <label class="check"><input type="checkbox" data-action="toggle-window" ${windowOn ? "checked" : ""} />这面墙有窗</label>
+        ${windowChecks.join("")}
         <div class="row"><button type="button" data-action="delete-wall">删除这面墙</button></div>
       </div>`;
     return;
@@ -661,7 +667,9 @@ function onSidebarChange(event: Event): void {
   if (selection?.type !== "wall") return;
   const run = runByKey(app.state, selection.key);
   if (!run) return;
-  mutate(() => toggleWindow(app.state, run));
+  const index = Number(input.dataset.index);
+  if (!Number.isInteger(index) || index < run.start || index >= run.end) return;
+  mutate(() => toggleWindow(app.state, run.dir, run.line, index));
   refresh();
 }
 
@@ -964,9 +972,13 @@ function onPointerDown(event: PointerEvent): void {
 
   if (app.tool === "window" && hit.wall) {
     const wall = hit.wall;
-    const key = runKey(wall.run);
-    mutate(() => toggleWindow(app.state, wall.run));
-    app.selection = { type: "wall", key };
+    const positions = wall.run.dir === "h" ? positionsOf(app.state).x : positionsOf(app.state).y;
+    let index = wall.run.start;
+    for (let cursor = wall.run.start; cursor < wall.run.end; cursor += 1) {
+      if (wall.meter + 1e-6 >= positions[cursor]) index = cursor;
+    }
+    mutate(() => toggleWindow(app.state, wall.run.dir, wall.run.line, index));
+    app.selection = { type: "wall", key: runKey(wall.run) };
     refresh();
     return;
   }

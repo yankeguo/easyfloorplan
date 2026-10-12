@@ -23,7 +23,6 @@ import {
   remapLabelCells,
   removeSpan,
   roundMm,
-  runIsWindow,
 } from "./geometry.ts";
 import type { ActionResult, Axis, Door, GridPoint, Label, PlanState, Run, Space } from "./types.ts";
 
@@ -417,13 +416,12 @@ function axisPositions(state: PlanState, dir: Run["dir"]): number[] {
   return dir === "h" ? positions.x : positions.y;
 }
 
-export function toggleWindow(state: PlanState, run: Run): ActionResult {
-  const turningOn = !runIsWindow(state.windowEdges, run);
-  for (let index = run.start; index < run.end; index += 1) {
-    const key = `${run.dir}:${run.line}:${index}`;
-    if (turningOn) state.windowEdges.add(key);
-    else state.windowEdges.delete(key);
-  }
+export function toggleWindow(state: PlanState, dir: Run["dir"], line: number, index: number): ActionResult {
+  const key = edgeKey(dir, line, index);
+  if (!edgesFor(state, dir).has(key)) return { ok: false, message: "这里没有墙" };
+  const turningOn = !state.windowEdges.has(key);
+  if (turningOn) state.windowEdges.add(key);
+  else state.windowEdges.delete(key);
   return { ok: true, on: turningOn };
 }
 
