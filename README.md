@@ -23,6 +23,8 @@ bun run build   # 生成 dist/index.html
 
 `dist/index.html` 把样式和脚本都内联在一份文件里，可以双击打开。
 
+推送到 `main` 后，GitHub Actions 会构建并发布到 GitHub Pages：<https://yankeguo.github.io/easyfloorplan/>。仓库的 Pages 设置里，源要选 **GitHub Actions**。
+
 ## 能做什么
 
 - 编辑开间和进深，拖动重排，或把一段拆成两段。多条序列交叉后结算成一组间隔。
