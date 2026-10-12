@@ -6,6 +6,7 @@ import {
   anchorFromMeter,
   computeRuns,
   computeSpaces,
+  spaceIsExterior,
   doorGeometry,
   doorSpanMeters,
   fitDoor,
@@ -229,6 +230,28 @@ test("room cells stay split by a wall even when the wall has a door", () => {
   const rect = cellInnerRect(0, 0, xPos, yPos, hEdges, vEdges);
   assert.equal(spaceNetArea(kitchen, xPos, yPos, hEdges, vEdges), (3000 - 120) * (4000 - 120));
   assert.ok(rect.x1 - rect.x0 < 3000);
+});
+
+test("only cells inside a closed outline count as rooms", () => {
+  const hEdges = new Set<string>();
+  const vEdges = new Set<string>();
+  addSpan(hEdges, "h", 0, 0, 1);
+  addSpan(hEdges, "h", 1, 0, 1);
+  addSpan(vEdges, "v", 0, 0, 1);
+  addSpan(vEdges, "v", 1, 0, 1);
+  const spaces = computeSpaces(2, 1, hEdges, vEdges);
+  const inside = spaces.find((space) => space.key === "0,0");
+  const outside = spaces.find((space) => space.key === "1,0");
+  assert.ok(inside);
+  assert.ok(outside);
+  assert.equal(spaceIsExterior(inside, 2, 1, hEdges, vEdges), false);
+  assert.equal(spaceIsExterior(outside, 2, 1, hEdges, vEdges), true);
+
+  addSpan(hEdges, "h", 0, 1, 2);
+  addSpan(hEdges, "h", 1, 1, 2);
+  addSpan(vEdges, "v", 2, 0, 1);
+  const enclosed = computeSpaces(2, 1, hEdges, vEdges);
+  assert.equal(enclosed.every((space) => spaceIsExterior(space, 2, 1, hEdges, vEdges)), false);
 });
 
 test("a label follows the space with the larger overlap", () => {

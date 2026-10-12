@@ -9,6 +9,7 @@ import {
   anchorFromMeter,
   computeRuns,
   computeSpaces,
+  spaceIsExterior,
   edgeKey,
   findRunContainingEdge,
   fitDoor,
@@ -48,11 +49,10 @@ export function positionsOf(state: PlanState): { x: number[]; y: number[] } {
 }
 
 export function spacesOf(state: PlanState): Space[] {
-  return computeSpaces(
-    state.xIntervals.length,
-    state.yIntervals.length,
-    state.hEdges,
-    state.vEdges,
+  const cols = state.xIntervals.length;
+  const rows = state.yIntervals.length;
+  return computeSpaces(cols, rows, state.hEdges, state.vEdges).filter(
+    (space) => !spaceIsExterior(space, cols, rows, state.hEdges, state.vEdges),
   );
 }
 

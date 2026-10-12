@@ -228,6 +228,22 @@ export function computeSpaces(
   return spaces;
 }
 
+export function spaceIsExterior(
+  space: Space,
+  cols: number,
+  rows: number,
+  hEdges: ReadonlySet<string>,
+  vEdges: ReadonlySet<string>,
+): boolean {
+  for (const cell of space.cells) {
+    if (cell.c === 0 && !vEdges.has(edgeKey("v", 0, cell.r))) return true;
+    if (cell.c === cols - 1 && !vEdges.has(edgeKey("v", cols, cell.r))) return true;
+    if (cell.r === 0 && !hEdges.has(edgeKey("h", 0, cell.c))) return true;
+    if (cell.r === rows - 1 && !hEdges.has(edgeKey("h", rows, cell.c))) return true;
+  }
+  return false;
+}
+
 export function cellInnerRect(
   column: number,
   row: number,
