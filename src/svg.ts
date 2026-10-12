@@ -3,6 +3,7 @@ import {
   DOOR_JAMB_THICKNESS,
   DOOR_WIDTH,
   WALL_THICKNESS,
+  WINDOW_FRAME,
   cellInnerRect,
   doorGeometry,
   doorSpanMeters,
@@ -169,10 +170,34 @@ export function exportPlanSvg(state: PlanState): string {
     const cross = run.dir === "h" ? yPos[run.line] ?? 0 : xPos[run.line] ?? 0;
     for (const piece of wallPieces(run, state, positions)) {
       if (piece.kind === "window") {
-        const box = band(run.dir, cross, piece.from, piece.to, WALL_THICKNESS);
-        rect(box.x, box.y, box.w, box.h, `fill="${PAPER}" stroke="${INK}" stroke-width="1.25"`);
+        drawWindow(piece.from, piece.to);
       } else if (piece.kind === "slide") {
         drawSlide(piece.from, piece.to);
+      }
+    }
+
+    function drawWindow(start: number, end: number): void {
+      const from = Math.min(start, end);
+      const length = Math.abs(end - start);
+      const frame = Math.min(WINDOW_FRAME, length / 4, WALL_THICKNESS / 4);
+      const box = band(run.dir, cross, from, from + length, WALL_THICKNESS);
+      rect(box.x, box.y, box.w, box.h, `fill="${INK}"`);
+      if (run.dir === "h") {
+        rect(
+          sx(from + frame),
+          sy(cross + half - frame),
+          (length - frame * 2) * ppm,
+          (WALL_THICKNESS - frame * 2) * ppm,
+          `fill="${PAPER}"`,
+        );
+      } else {
+        rect(
+          sx(cross - half + frame),
+          sy(from + length - frame),
+          (WALL_THICKNESS - frame * 2) * ppm,
+          (length - frame * 2) * ppm,
+          `fill="${PAPER}"`,
+        );
       }
     }
 
@@ -288,7 +313,8 @@ export function exportPlanSvg(state: PlanState): string {
     };
     item("墙", (left, top) => rect(left, top, 30, 12, `fill="${INK}"`));
     item("窗", (left, top) => {
-      rect(left, top, 30, 12, `fill="${PAPER}" stroke="${INK}" stroke-width="1.25"`);
+      rect(left, top, 30, 12, `fill="${INK}"`);
+      rect(left + 3, top + 3, 24, 6, `fill="${PAPER}"`);
     });
     item("推拉门", (left, top) => {
       rect(left, top, 30, 12, `fill="${PAPER}"`);

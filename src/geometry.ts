@@ -17,6 +17,7 @@ export const WALL_THICKNESS = 120;
 export const DOOR_WIDTH = 800;
 export const DOOR_JAMB_SPAN = WALL_THICKNESS + 36;
 export const DOOR_JAMB_THICKNESS = 48;
+export const WINDOW_FRAME = 32;
 export const MIN_INTERVAL = 300;
 export const MAX_INTERVAL = 100000;
 export const MAX_INTERVALS = 24;

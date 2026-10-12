@@ -3,6 +3,7 @@ import {
   DOOR_JAMB_THICKNESS,
   DOOR_WIDTH,
   WALL_THICKNESS,
+  WINDOW_FRAME,
   cellInnerRect,
   doorGeometry,
   doorSpanMeters,
@@ -444,6 +445,46 @@ function hatchRect(
   ctx.restore();
 }
 
+function drawWindowFrame(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  dir: Direction,
+  cross: number,
+  start: number,
+  end: number,
+  color: string,
+): void {
+  const from = Math.min(start, end);
+  const length = Math.abs(end - start);
+  const frame = Math.min(WINDOW_FRAME, length / 4, WALL_THICKNESS / 4);
+  const half = WALL_THICKNESS / 2;
+  if (dir === "h") {
+    fillWorldRect(ctx, view, from, cross - half, length, WALL_THICKNESS, color, 0);
+    fillWorldRect(
+      ctx,
+      view,
+      from + frame,
+      cross - half + frame,
+      length - frame * 2,
+      WALL_THICKNESS - frame * 2,
+      PAPER,
+      0,
+    );
+  } else {
+    fillWorldRect(ctx, view, cross - half, from, WALL_THICKNESS, length, color, 0);
+    fillWorldRect(
+      ctx,
+      view,
+      cross - half + frame,
+      from + frame,
+      WALL_THICKNESS - frame * 2,
+      length - frame * 2,
+      PAPER,
+      0,
+    );
+  }
+}
+
 function drawDoorSymbol(
   ctx: CanvasRenderingContext2D,
   view: View,
@@ -591,11 +632,10 @@ function drawExportLegend(ctx: CanvasRenderingContext2D, ppm: number): void {
     ctx.fillRect(left, top, 30, 12);
   }, "墙");
   swatch((left, top) => {
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = INK;
     ctx.fillRect(left, top, 30, 12);
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 1.25;
-    ctx.strokeRect(left + 0.5, top + 0.5, 29, 11);
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(left + 3, top + 3, 24, 6);
   }, "窗");
   swatch((left, top) => {
     ctx.fillStyle = PAPER;
@@ -754,8 +794,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
     const selected = runKey(run) === selectedWall;
     for (const piece of wallPieces(run, state, positions)) {
       if (piece.kind === "window") {
-        fillBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, PAPER, 0.4);
-        strokeBand(ctx, view, run.dir, cross, piece.from, piece.to, WALL_THICKNESS, selected ? TEAL : INK);
+        drawWindowFrame(ctx, view, run.dir, cross, piece.from, piece.to, selected ? TEAL : INK);
       } else if (piece.kind === "slide") {
         drawSlide(ctx, view, run.dir, cross, piece.from, piece.to, selected);
       }
