@@ -1,4 +1,6 @@
 import {
+  DOOR_JAMB_SPAN,
+  DOOR_JAMB_THICKNESS,
   DOOR_WIDTH,
   WALL_THICKNESS,
   cellInnerRect,
@@ -457,26 +459,16 @@ function drawDoorSymbol(
   } else {
     fillWorldRect(ctx, view, geometry.cross - half, geometry.start, WALL_THICKNESS, DOOR_WIDTH, PAPER, 0.6);
   }
-  const cap = WALL_THICKNESS + 160;
-  ctx.save();
-  ctx.strokeStyle = selected ? TEAL : INK;
-  ctx.lineWidth = selected ? 2.25 : 1.75;
-  ctx.lineCap = "butt";
+  const color = selected ? TEAL : INK;
+  const along = DOOR_JAMB_THICKNESS;
+  const across = DOOR_JAMB_SPAN;
   for (const meter of [geometry.start, geometry.end]) {
-    const from =
-      door.dir === "h"
-        ? worldToScreen(meter, geometry.cross - cap / 2, view)
-        : worldToScreen(geometry.cross - cap / 2, meter, view);
-    const to =
-      door.dir === "h"
-        ? worldToScreen(meter, geometry.cross + cap / 2, view)
-        : worldToScreen(geometry.cross + cap / 2, meter, view);
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
+    if (door.dir === "h") {
+      fillWorldRect(ctx, view, meter - along / 2, geometry.cross - across / 2, along, across, color, 0);
+    } else {
+      fillWorldRect(ctx, view, geometry.cross - across / 2, meter - along / 2, across, along, color, 0);
+    }
   }
-  ctx.restore();
 }
 
 function drawLabels(
@@ -622,18 +614,11 @@ function drawExportLegend(ctx: CanvasRenderingContext2D, ppm: number): void {
     ctx.stroke();
   }, "推拉门");
   swatch((left, top) => {
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(left, top + 6);
-    ctx.lineTo(left + 8, top + 6);
-    ctx.moveTo(left + 22, top + 6);
-    ctx.lineTo(left + 30, top + 6);
-    ctx.moveTo(left + 8, top + 1);
-    ctx.lineTo(left + 8, top + 11);
-    ctx.moveTo(left + 22, top + 1);
-    ctx.lineTo(left + 22, top + 11);
-    ctx.stroke();
+    ctx.fillStyle = INK;
+    ctx.fillRect(left, top + 5, 7, 2);
+    ctx.fillRect(left + 23, top + 5, 7, 2);
+    ctx.fillRect(left + 6, top + 3, 3, 6);
+    ctx.fillRect(left + 21, top + 3, 3, 6);
   }, "门洞");
   swatch((left, top) => {
     ctx.save();
@@ -867,7 +852,7 @@ function doorPointerDistance(
   view: View,
 ): number {
   const geometry = doorGeometry(door, xPos, yPos);
-  const capHalf = (WALL_THICKNESS + 160) / 2;
+  const capHalf = DOOR_JAMB_SPAN / 2;
   const rect =
     door.dir === "h"
       ? screenRect(geometry.start, geometry.cross - capHalf, geometry.end, geometry.cross + capHalf, view)

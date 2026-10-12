@@ -1,4 +1,6 @@
 import {
+  DOOR_JAMB_SPAN,
+  DOOR_JAMB_THICKNESS,
   DOOR_WIDTH,
   WALL_THICKNESS,
   cellInnerRect,
@@ -201,12 +203,16 @@ export function exportPlanSvg(state: PlanState): string {
 
   function drawDoor(door: Door): void {
     const geometry = doorGeometry(door, xPos, yPos);
-    const cap = WALL_THICKNESS + 160;
+    const along = DOOR_JAMB_THICKNESS;
+    const across = DOOR_JAMB_SPAN;
     if (door.dir === "h") rect(sx(geometry.start), sy(geometry.cross + half), DOOR_WIDTH * ppm, WALL_THICKNESS * ppm, `fill="${PAPER}"`);
     else rect(sx(geometry.cross - half), sy(geometry.start + DOOR_WIDTH), WALL_THICKNESS * ppm, DOOR_WIDTH * ppm, `fill="${PAPER}"`);
     for (const meter of [geometry.start, geometry.end]) {
-      if (door.dir === "h") line(sx(meter), sy(geometry.cross - cap / 2), sx(meter), sy(geometry.cross + cap / 2), `stroke="${INK}" stroke-width="1.75"`);
-      else line(sx(geometry.cross - cap / 2), sy(meter), sx(geometry.cross + cap / 2), sy(meter), `stroke="${INK}" stroke-width="1.75"`);
+      if (door.dir === "h") {
+        rect(sx(meter - along / 2), sy(geometry.cross + across / 2), along * ppm, across * ppm, `fill="${INK}"`);
+      } else {
+        rect(sx(geometry.cross - across / 2), sy(meter + along / 2), across * ppm, along * ppm, `fill="${INK}"`);
+      }
     }
   }
 
@@ -293,11 +299,10 @@ export function exportPlanSvg(state: PlanState): string {
       line(left, top + 6, left + 30, top + 6, `stroke="${INK}" stroke-width="1"`);
     });
     item("门洞", (left, top) => {
-      const stroke = `stroke="${INK}" stroke-width="1.5"`;
-      line(left, top + 6, left + 8, top + 6, stroke);
-      line(left + 22, top + 6, left + 30, top + 6, stroke);
-      line(left + 8, top + 1, left + 8, top + 11, stroke);
-      line(left + 22, top + 1, left + 22, top + 11, stroke);
+      rect(left, top + 5, 7, 2, `fill="${INK}"`);
+      rect(left + 23, top + 5, 7, 2, `fill="${INK}"`);
+      rect(left + 6, top + 3, 3, 6, `fill="${INK}"`);
+      rect(left + 21, top + 3, 3, 6, `fill="${INK}"`);
     });
     item("飘窗", (left, top) => {
       const id = `legend-bay-${clipId}`;
