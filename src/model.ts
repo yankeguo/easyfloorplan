@@ -482,18 +482,6 @@ export function moveDoor(state: PlanState, id: string, startMeter: number): Acti
   return { ok: true };
 }
 
-export function updateDoor(
-  state: PlanState,
-  id: string,
-  patch: { hinge?: string; side?: number },
-): ActionResult {
-  const door = state.doors.find((item) => item.id === id);
-  if (!door) return { ok: false, message: "找不到这扇门" };
-  if (patch.hinge) door.hinge = patch.hinge === "high" ? "high" : "low";
-  if (patch.side) door.side = patch.side < 0 ? -1 : 1;
-  return { ok: true };
-}
-
 export function deleteDoor(state: PlanState, id: string): ActionResult {
   const before = state.doors.length;
   state.doors = state.doors.filter((door) => door.id !== id);

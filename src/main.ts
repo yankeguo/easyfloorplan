@@ -38,7 +38,6 @@ import {
   settleSequences,
   spacesOf,
   toggleWindow,
-  updateDoor,
 } from "./model.ts";
 import { drawScene, hitTest } from "./render.ts";
 import type {
@@ -89,7 +88,7 @@ const HINTS = {
   select: "点选墙、门或空间。拖动空白处平移，滚轮缩放，双击空间可改标签。",
   wall: "依次点击同一条参考线上的两个交叉点。按住空格可平移。",
   erase: "依次点击两个交叉点，去掉它们之间的墙。",
-  door: "在墙面上点击，放下一扇 1000 mm 宽的门。拖动可改位置。",
+  door: "在墙面上点击，留出 800 mm 宽的门洞。拖动可改位置。",
   window: "点击一面墙，标记这面墙上有窗。再点一次取消。",
   label: "点击一个空间，为它填写名称。",
 };
@@ -529,7 +528,7 @@ function renderSelection(): void {
   const selection = app.selection;
   if (!selection) {
     mount.innerHTML =
-      '<div class="selection-empty"><p>未选中墙、门或空间。</p><p>墙厚 120 mm，门洞 1000 mm。</p></div>';
+      '<div class="selection-empty"><p>未选中墙、门或空间。</p><p>墙厚 120 mm，门洞 800 mm。</p></div>';
     return;
   }
   if (selection.type === "wall") {
@@ -567,8 +566,6 @@ function renderSelection(): void {
         <h3>门洞</h3>
         <p>宽度 ${DOOR_WIDTH} mm，距墙起点 <span data-door-pos>${doorOffsetText(door)}</span></p>
         <div class="row">
-          <button type="button" data-action="flip-hinge">换合页边</button>
-          <button type="button" data-action="flip-side">换开启侧</button>
           <button type="button" data-action="delete-door">删除门</button>
         </div>
       </div>`;
@@ -642,19 +639,6 @@ function onSidebarClick(event: MouseEvent): void {
   }
   if (action === "delete-wall" || action === "delete-door") {
     deleteSelection();
-    return;
-  }
-  if (action === "flip-hinge" || action === "flip-side") {
-    const selection = app.selection;
-    if (selection?.type !== "door") return;
-    const door = app.state.doors.find((item) => item.id === selection.id);
-    if (!door) return;
-    if (action === "flip-hinge") {
-      mutate(() => updateDoor(app.state, door.id, { hinge: door.hinge === "high" ? "low" : "high" }));
-    } else {
-      mutate(() => updateDoor(app.state, door.id, { side: door.side > 0 ? -1 : 1 }));
-    }
-    refresh();
     return;
   }
   if (action === "edit-label" || action === "clear-label") {
@@ -1325,7 +1309,7 @@ function renderStatus(hit: Hit | null): void {
     positions.y.at(-1) ?? 0,
   );
   const zoom = Math.round((app.view.ppm / fitted.ppm) * 100);
-  let message = `墙 120 mm · 门 1000 mm · ${zoom}%`;
+  let message = `墙 120 mm · 门 800 mm · ${zoom}%`;
   if (hit?.world) {
     message = `X ${formatMm(hit.world.x)} mm · Y ${formatMm(hit.world.y)} mm · ${message}`;
   }

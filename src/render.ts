@@ -349,28 +349,29 @@ function drawDoorSymbol(
   const geometry = doorGeometry(door, xPos, yPos);
   const half = WALL_THICKNESS / 2;
   if (door.dir === "h") {
-    fillWorldRect(ctx, view, geometry.start, geometry.cross - half, DOOR_WIDTH, WALL_THICKNESS, PAPER, 0);
+    fillWorldRect(ctx, view, geometry.start, geometry.cross - half, DOOR_WIDTH, WALL_THICKNESS, PAPER, 0.6);
   } else {
-    fillWorldRect(ctx, view, geometry.cross - half, geometry.start, WALL_THICKNESS, DOOR_WIDTH, PAPER, 0);
+    fillWorldRect(ctx, view, geometry.cross - half, geometry.start, WALL_THICKNESS, DOOR_WIDTH, PAPER, 0.6);
   }
-  const hinge = worldToScreen(geometry.hinge.x, geometry.hinge.y, view);
-  const leaf = worldToScreen(geometry.leaf.x, geometry.leaf.y, view);
-  const closed = worldToScreen(geometry.closed.x, geometry.closed.y, view);
+  const cap = WALL_THICKNESS + 160;
   ctx.save();
   ctx.strokeStyle = selected ? TEAL : INK;
-  ctx.lineWidth = selected ? 1.8 : 1.25;
-  ctx.beginPath();
-  ctx.moveTo(hinge.x, hinge.y);
-  ctx.lineTo(leaf.x, leaf.y);
-  ctx.stroke();
-  const startAngle = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
-  const endAngle = Math.atan2(leaf.y - hinge.y, leaf.x - hinge.x);
-  let delta = endAngle - startAngle;
-  while (delta <= -Math.PI) delta += Math.PI * 2;
-  while (delta > Math.PI) delta -= Math.PI * 2;
-  ctx.beginPath();
-  ctx.arc(hinge.x, hinge.y, DOOR_WIDTH * view.ppm, startAngle, endAngle, delta < 0);
-  ctx.stroke();
+  ctx.lineWidth = selected ? 2.25 : 1.75;
+  ctx.lineCap = "butt";
+  for (const meter of [geometry.start, geometry.end]) {
+    const from =
+      door.dir === "h"
+        ? worldToScreen(meter, geometry.cross - cap / 2, view)
+        : worldToScreen(geometry.cross - cap / 2, meter, view);
+    const to =
+      door.dir === "h"
+        ? worldToScreen(meter, geometry.cross + cap / 2, view)
+        : worldToScreen(geometry.cross + cap / 2, meter, view);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -646,17 +647,6 @@ function screenRect(
   return { x, y, w: Math.abs(p1.x - p0.x), h: Math.abs(p1.y - p0.y) };
 }
 
-function angleOnShortArc(angle: number, start: number, end: number): boolean {
-  let delta = end - start;
-  while (delta <= -Math.PI) delta += Math.PI * 2;
-  while (delta > Math.PI) delta -= Math.PI * 2;
-  let current = angle - start;
-  while (current <= -Math.PI) current += Math.PI * 2;
-  while (current > Math.PI) current -= Math.PI * 2;
-  if (delta >= 0) return current >= -1e-3 && current <= delta + 1e-3;
-  return current <= 1e-3 && current >= delta - 1e-3;
-}
-
 function doorPointerDistance(
   px: number,
   py: number,
@@ -666,11 +656,11 @@ function doorPointerDistance(
   view: View,
 ): number {
   const geometry = doorGeometry(door, xPos, yPos);
-  const half = WALL_THICKNESS / 2;
+  const capHalf = (WALL_THICKNESS + 160) / 2;
   const rect =
     door.dir === "h"
-      ? screenRect(geometry.start, geometry.cross - half, geometry.end, geometry.cross + half, view)
-      : screenRect(geometry.cross - half, geometry.start, geometry.cross + half, geometry.end, view);
+      ? screenRect(geometry.start, geometry.cross - capHalf, geometry.end, geometry.cross + capHalf, view)
+      : screenRect(geometry.cross - capHalf, geometry.start, geometry.cross + capHalf, geometry.end, view);
   if (
     px >= rect.x - 6 &&
     px <= rect.x + rect.w + 6 &&
@@ -679,17 +669,7 @@ function doorPointerDistance(
   ) {
     return 0;
   }
-  const hinge = worldToScreen(geometry.hinge.x, geometry.hinge.y, view);
-  const leaf = worldToScreen(geometry.leaf.x, geometry.leaf.y, view);
-  const closed = worldToScreen(geometry.closed.x, geometry.closed.y, view);
-  const leafDistance = projectSegment(px, py, hinge.x, hinge.y, leaf.x, leaf.y).dist;
-  const radius = DOOR_WIDTH * view.ppm;
-  const radial = Math.hypot(px - hinge.x, py - hinge.y);
-  const angle = Math.atan2(py - hinge.y, px - hinge.x);
-  const start = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
-  const end = Math.atan2(leaf.y - hinge.y, leaf.x - hinge.x);
-  const arcDistance = angleOnShortArc(angle, start, end) ? Math.abs(radial - radius) : Infinity;
-  return Math.min(leafDistance, arcDistance);
+  return Infinity;
 }
 
 export function hitTest(px: number, py: number, state: PlanState, view: View) {

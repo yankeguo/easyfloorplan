@@ -79,9 +79,6 @@ export interface DoorGeometry {
   start: number;
   end: number;
   cross: number;
-  hinge: Point;
-  closed: Point;
-  leaf: Point;
 }
 
 export interface View {

@@ -10,12 +10,11 @@ import type {
   Point,
   Rect,
   Run,
-  Side,
   Space,
 } from "./types.ts";
 
 export const WALL_THICKNESS = 120;
-export const DOOR_WIDTH = 1000;
+export const DOOR_WIDTH = 800;
 export const MIN_INTERVAL = 300;
 export const MAX_INTERVAL = 100000;
 export const MAX_INTERVALS = 24;
@@ -323,26 +322,7 @@ export function doorGeometry(door: Door, xPos: readonly number[], yPos: readonly
   const along = door.dir === "h" ? xPos : yPos;
   const cross = door.dir === "h" ? yPos[door.line] : xPos[door.line];
   const [start, end] = doorSpanMeters(door, along);
-  const side: Side = door.side >= 0 ? 1 : -1;
-  const hingeAtLow = door.hinge !== "high";
-  const hingeMeter = hingeAtLow ? start : end;
-  const closedMeter = hingeAtLow ? end : start;
-  const hinge =
-    door.dir === "h" ? { x: hingeMeter, y: cross } : { x: cross, y: hingeMeter };
-  const closed =
-    door.dir === "h" ? { x: closedMeter, y: cross } : { x: cross, y: closedMeter };
-  const normal = door.dir === "h" ? { x: 0, y: side } : { x: side, y: 0 };
-  return {
-    start,
-    end,
-    cross,
-    hinge,
-    closed,
-    leaf: {
-      x: hinge.x + normal.x * DOOR_WIDTH,
-      y: hinge.y + normal.y * DOOR_WIDTH,
-    },
-  };
+  return { start, end, cross };
 }
 
 export function anchorFromMeter(positions: readonly number[], meter: number): { anchor: number; local: number } {

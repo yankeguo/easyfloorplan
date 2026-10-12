@@ -38,7 +38,7 @@ test("sample plan has four labeled rooms, doors and window walls", () => {
   for (const door of state.doors) {
     const positions = door.dir === "h" ? x : y;
     const [start, end] = doorSpanMeters(door, positions);
-    assert.ok(Math.abs(end - start - 1000) < 1e-9);
+    assert.ok(Math.abs(end - start - 800) < 1e-9);
     assert.ok(start >= -1e-9);
   }
   const kitchen = spaces.find((space) => space.key === "0,0");

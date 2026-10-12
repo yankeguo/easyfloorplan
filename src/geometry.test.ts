@@ -104,13 +104,13 @@ test("doors may touch but may not overlap", () => {
   );
   assert.ok(first);
   const second = fitDoor(
-    door({ id: "b", dir: "v", line: 1, anchor: 0, local: 1000, hinge: "low", side: 1 }),
+    door({ id: "b", dir: "v", line: 1, anchor: 0, local: 800, hinge: "low", side: 1 }),
     edges,
     positions,
     [first],
   );
   assert.ok(second);
-  assert.equal(positions[second.anchor] + second.local, 1000);
+  assert.equal(positions[second.anchor] + second.local, 800);
   const blocked = fitDoor(
     door({ id: "c", dir: "v", line: 1, anchor: 0, local: 400, hinge: "low", side: 1 }),
     edges,
@@ -119,30 +119,28 @@ test("doors may touch but may not overlap", () => {
   );
   assert.ok(blocked);
   const blockedStart = positions[blocked.anchor] + blocked.local;
-  assert.ok(blockedStart >= 990);
-  assert.ok(blockedStart < 1200);
+  assert.ok(blockedStart >= 790);
+  assert.ok(blockedStart < 1000);
 });
 
-test("door leaf is 1000 mm long and opens to the chosen side", () => {
+test("a door opening is 800 mm between the two jambs", () => {
   const horizontal = doorGeometry(
     door({ dir: "h", line: 0, anchor: 0, local: 500, hinge: "low", side: 1 }),
     [0, 4000],
     [0, 3000],
   );
-  assert.ok(Math.abs(horizontal.hinge.x - 500) < 1e-9);
-  assert.equal(horizontal.hinge.y, 0);
-  assert.ok(Math.abs(horizontal.leaf.x - 500) < 1e-9);
-  assert.ok(Math.abs(horizontal.leaf.y - 1000) < 1e-9);
-  assert.ok(Math.abs(horizontal.closed.x - 1500) < 1e-9);
+  assert.equal(horizontal.cross, 0);
+  assert.ok(Math.abs(horizontal.start - 500) < 1e-9);
+  assert.ok(Math.abs(horizontal.end - horizontal.start - DOOR_WIDTH) < 1e-9);
 
   const vertical = doorGeometry(
     door({ dir: "v", line: 1, anchor: 0, local: 0, hinge: "high", side: -1 }),
     [0, 4000],
     [0, 3000],
   );
-  assert.deepEqual(vertical.hinge, { x: 4000, y: 1000 });
-  assert.deepEqual(vertical.leaf, { x: 3000, y: 1000 });
-  assert.deepEqual(vertical.closed, { x: 4000, y: 0 });
+  assert.equal(vertical.cross, 4000);
+  assert.equal(vertical.start, 0);
+  assert.equal(vertical.end, DOOR_WIDTH);
 });
 
 test("normalize is stable", () => {
