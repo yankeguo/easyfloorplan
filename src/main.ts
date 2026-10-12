@@ -243,6 +243,17 @@ required("fit", HTMLButtonElement).addEventListener("click", () => {
   draw();
   renderStatus(app.lastHit);
 });
+required("save-json", HTMLButtonElement).addEventListener("click", saveJson);
+required("load-json-button", HTMLButtonElement).addEventListener("click", () => {
+  required("load-json", HTMLInputElement).click();
+});
+required("load-json", HTMLInputElement).addEventListener("change", (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  const file = input.files?.[0];
+  input.value = "";
+  if (file) void loadJson(file);
+});
 required("export-png", HTMLButtonElement).addEventListener("click", exportPng);
 required("export-svg", HTMLButtonElement).addEventListener("click", exportSvg);
 required("sample", HTMLButtonElement).addEventListener("click", loadSample);
@@ -1422,6 +1433,60 @@ function clearPlan(): void {
   app.preview = null;
   persist();
   refresh();
+}
+
+function saveJson(): void {
+  const pretty = `${JSON.stringify(JSON.parse(serialize(app.state)), null, 2)}\n`;
+  const blob = new Blob([pretty], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  download("户型.json", url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function loadJson(file: File): Promise<void> {
+  if (!window.confirm("载入文件会替换当前户型。可以用撤销恢复。")) return;
+  let text = "";
+  try {
+    text = await file.text();
+  } catch {
+    toast("读不到这个文件");
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    toast("这个文件不是 JSON");
+    return;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    toast("这个 JSON 不是户型文件");
+    return;
+  }
+  let next: PlanState;
+  try {
+    next = deserialize(JSON.stringify(parsed));
+  } catch {
+    toast("这个 JSON 读不出来");
+    return;
+  }
+  if (app.editor) {
+    app.editor = null;
+    app.editorFocusToken = null;
+    editor.classList.remove("is-open");
+    editor.blur();
+  }
+  const previous = serialize(app.state);
+  app.state = next;
+  app.undo.push(previous);
+  app.redo = [];
+  app.selection = null;
+  app.anchor = null;
+  app.preview = null;
+  app.viewCustom = false;
+  persist();
+  refresh({ intervals: true, refit: true });
+  toast("已载入户型");
 }
 
 function download(filename: string, href: string): void {
