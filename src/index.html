@@ -17,15 +17,23 @@
           </div>
         </div>
         <div class="header-actions">
-          <button id="undo" type="button">撤销</button>
-          <button id="redo" type="button">重做</button>
-          <button id="fit" type="button">适配</button>
-          <button id="clear" type="button">清空墙体</button>
-          <button id="save-json" type="button">保存 JSON</button>
-          <button id="load-json-button" type="button">载入 JSON</button>
-          <input id="load-json" type="file" accept="application/json,.json" hidden />
-          <button id="export-png" type="button" class="primary">导出 PNG</button>
-          <button id="export-svg" type="button">导出 SVG</button>
+          <div class="action-group">
+            <button id="undo" type="button">撤销</button>
+            <button id="redo" type="button">重做</button>
+            <button id="fit" type="button">适配</button>
+          </div>
+          <div class="action-group">
+            <button id="save-json" type="button">保存 JSON</button>
+            <button id="load-json-button" type="button">载入 JSON</button>
+            <input id="load-json" type="file" accept="application/json,.json" hidden />
+          </div>
+          <div class="action-group">
+            <button id="export-png" type="button" class="primary">导出 PNG</button>
+            <button id="export-svg" type="button">导出 SVG</button>
+          </div>
+          <div class="action-group">
+            <button id="clear" type="button">清空墙体</button>
+          </div>
         </div>
       </header>
       <div class="workspace">

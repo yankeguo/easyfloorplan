@@ -75,6 +75,24 @@ header {
 
 .header-actions, .footer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+.header-actions {
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-group + .action-group {
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
 header button, .footer-actions button, .add, .selection button, .text-button {
   border: 1px solid #ddd4c8;
   background: white;
