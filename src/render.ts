@@ -388,7 +388,6 @@ function drawBayFloors(
     if (column < 0 || row < 0 || column + 1 >= xPos.length || row + 1 >= yPos.length) continue;
     const rect = cellInnerRect(column, row, xPos, yPos, state.hEdges, state.vEdges);
     if (rect.x1 - rect.x0 < 1 || rect.y1 - rect.y0 < 1) continue;
-    fillWorldRect(ctx, view, rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0, "#f6f1e6", 0);
     hatchRect(ctx, view, rect.x0, rect.y0, rect.x1, rect.y1);
   }
 }
@@ -577,6 +576,95 @@ function drawPreview(
   chipText(ctx, `${formatMm(length)} mm`, point.x, point.y - 16);
 }
 
+function drawExportLegend(ctx: CanvasRenderingContext2D, ppm: number): void {
+  const x = 18;
+  let y = 28;
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = INK;
+  ctx.font = `600 13px ${SANS}`;
+  ctx.fillText("图例", x, y);
+  y += 24;
+
+  const swatch = (draw: (left: number, top: number) => void, label: string) => {
+    draw(x, y - 6);
+    ctx.font = `12px ${SANS}`;
+    ctx.fillStyle = INK;
+    ctx.fillText(label, x + 42, y);
+    y += 24;
+  };
+  swatch((left, top) => {
+    ctx.fillStyle = INK;
+    ctx.fillRect(left, top, 30, 12);
+  }, "墙");
+  swatch((left, top) => {
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(left, top, 30, 12);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.25;
+    ctx.strokeRect(left + 0.5, top + 0.5, 29, 11);
+  }, "窗");
+  swatch((left, top) => {
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(left, top, 30, 12);
+    ctx.fillStyle = INK;
+    ctx.fillRect(left, top + 6, 15, 6);
+    ctx.fillRect(left + 15, top, 15, 6);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left + 0.5, top + 0.5, 29, 11);
+    ctx.beginPath();
+    ctx.moveTo(left + 15, top);
+    ctx.lineTo(left + 15, top + 12);
+    ctx.moveTo(left, top + 6);
+    ctx.lineTo(left + 30, top + 6);
+    ctx.stroke();
+  }, "推拉门");
+  swatch((left, top) => {
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(left, top + 6);
+    ctx.lineTo(left + 8, top + 6);
+    ctx.moveTo(left + 22, top + 6);
+    ctx.lineTo(left + 30, top + 6);
+    ctx.moveTo(left + 8, top + 1);
+    ctx.lineTo(left + 8, top + 11);
+    ctx.moveTo(left + 22, top + 1);
+    ctx.lineTo(left + 22, top + 11);
+    ctx.stroke();
+  }, "门洞");
+  swatch((left, top) => {
+    ctx.save();
+    ctx.fillStyle = "#e3eee7";
+    ctx.fillRect(left, top, 30, 12);
+    ctx.beginPath();
+    ctx.rect(left, top, 30, 12);
+    ctx.clip();
+    ctx.strokeStyle = "rgba(90, 72, 48, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let offset = -12; offset <= 30; offset += 6) {
+      ctx.moveTo(left + offset, top + 12);
+      ctx.lineTo(left + offset + 12, top);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }, "飘窗");
+
+  y += 4;
+  ctx.font = `11px ${SANS}`;
+  ctx.fillStyle = MUTED;
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("墙厚 120 mm", x, y);
+  y += 16;
+  ctx.fillText("门洞 800 mm", x, y);
+  y += 28;
+  drawScaleBar(ctx, x + 8, y, ppm);
+  ctx.restore();
+}
+
 function drawScaleBar(ctx: CanvasRenderingContext2D, x: number, y: number, ppm: number): void {
   const choices = [500, 1000, 2000, 5000, 10000, 20000];
   let length = choices[0];
@@ -654,7 +742,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
 
   drawBayFloors(ctx, view, state, xPos, yPos);
 
-  drawReferenceLines(ctx, view, xPos, yPos);
+  if (!scene.exporting) drawReferenceLines(ctx, view, xPos, yPos);
 
   for (const run of runsOf(state)) {
     if (runKey(run) !== selectedWall) continue;
@@ -731,10 +819,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, width: number, height: 
     ctx.restore();
   }
 
-  drawPreview(ctx, view, scene.preview, xPos, yPos);
-  drawPoints(ctx, view, xPos, yPos, scene);
+  if (!scene.exporting) {
+    drawPreview(ctx, view, scene.preview, xPos, yPos);
+    drawPoints(ctx, view, xPos, yPos, scene);
+  }
   drawDimensions(ctx, view, xPos, yPos);
-  if (scene.exporting) drawScaleBar(ctx, 28, height - 36, view.ppm);
+  if (scene.exporting) drawExportLegend(ctx, view.ppm);
 }
 
 function projectSegment(

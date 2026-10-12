@@ -40,7 +40,9 @@ import {
   toggleSlide,
   toggleWindow,
 } from "./model.ts";
+import { exportLayout } from "./export-layout.ts";
 import { drawScene, hitTest } from "./render.ts";
+import { exportPlanSvg } from "./svg.ts";
 import type {
   ActionResult,
   Axis,
@@ -241,7 +243,8 @@ required("fit", HTMLButtonElement).addEventListener("click", () => {
   draw();
   renderStatus(app.lastHit);
 });
-required("export", HTMLButtonElement).addEventListener("click", exportPng);
+required("export-png", HTMLButtonElement).addEventListener("click", exportPng);
+required("export-svg", HTMLButtonElement).addEventListener("click", exportSvg);
 required("sample", HTMLButtonElement).addEventListener("click", loadSample);
 required("clear", HTMLButtonElement).addEventListener("click", clearPlan);
 
@@ -1421,35 +1424,47 @@ function clearPlan(): void {
   refresh();
 }
 
+function download(filename: string, href: string): void {
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  link.click();
+}
+
+function exportScene() {
+  const frame = exportLayout(app.state);
+  return {
+    frame,
+    scene: {
+      state: app.state,
+      view: frame.view,
+      tool: "select" as const,
+      anchor: null,
+      hoverPoint: null,
+      hoverRun: null,
+      preview: null,
+      selection: null,
+      exporting: true,
+    },
+  };
+}
+
 function exportPng(): void {
-  const { x, y } = positionsOf(app.state);
-  const worldWidth = x[x.length - 1];
-  const worldHeight = y[y.length - 1];
-  const longEdge = Math.max(worldWidth, worldHeight, 100);
-  const ppm = Math.min(0.09, 3400 / longEdge);
-  const pad = 120;
-  const width = Math.ceil(worldWidth * ppm + pad * 2);
-  const height = Math.ceil(worldHeight * ppm + pad * 2);
+  const { frame, scene } = exportScene();
   const output = document.createElement("canvas");
   const dpr = 2;
-  output.width = width * dpr;
-  output.height = height * dpr;
+  output.width = frame.width * dpr;
+  output.height = frame.height * dpr;
   const context = output.getContext("2d");
   if (!context) return;
   context.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawScene(context, width, height, {
-    state: app.state,
-    view: { ox: pad, oy: pad + worldHeight * ppm, ppm },
-    tool: "select",
-    anchor: null,
-    hoverPoint: null,
-    hoverRun: null,
-    preview: null,
-    selection: null,
-    exporting: true,
-  });
-  const link = document.createElement("a");
-  link.href = output.toDataURL("image/png");
-  link.download = "户型图.png";
-  link.click();
+  drawScene(context, frame.width, frame.height, scene);
+  download("户型图.png", output.toDataURL("image/png"));
+}
+
+function exportSvg(): void {
+  const blob = new Blob([exportPlanSvg(app.state)], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  download("户型图.svg", url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
