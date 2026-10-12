@@ -102,6 +102,21 @@
         </aside>
       </div>
     </div>
+    <dialog id="split-dialog">
+      <form id="split-form">
+        <h2>拆分间隔</h2>
+        <p id="split-help"></p>
+        <label class="split-field">第一段
+          <input id="split-value" type="number" min="300" max="100000" step="1" inputmode="numeric" />
+          <em>mm</em>
+        </label>
+        <p id="split-preview"></p>
+        <div class="dialog-actions">
+          <button type="button" id="split-cancel">取消</button>
+          <button type="submit" class="primary">拆分</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="sequence-dialog">
       <form id="sequence-form">
         <h2 id="sequence-title">多序列切分</h2>

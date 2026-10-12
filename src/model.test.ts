@@ -15,6 +15,7 @@ import {
   runByKey,
   serialize,
   setIntervalValue,
+  splitInterval,
   settleSequences,
   setSpaceLabel,
   spacesOf,
@@ -113,6 +114,33 @@ test("removing an interval keeps a door that sits beyond the cut", () => {
   assert.equal(cleared.ok, true);
   normalize(state);
   assert.equal(labelForSpace(state, renamed), null);
+});
+
+test("splitting an interval extends the walls and floors on that bay", () => {
+  const state = createSample();
+  state.bayCells.add("0,0");
+  const result = splitInterval(state, "x", 0, 1500);
+  assert.equal(result.ok, true);
+  assert.deepEqual(state.xIntervals, [1500, 2400, 3300, 2700]);
+  assert.equal(state.hEdges.has("h:0:0"), true);
+  assert.equal(state.hEdges.has("h:0:1"), true);
+  assert.equal(state.windowEdges.has("h:0:0"), true);
+  assert.equal(state.windowEdges.has("h:0:1"), true);
+  assert.equal(state.hEdges.has("h:1:0"), true);
+  assert.equal(state.hEdges.has("h:1:1"), true);
+  assert.equal(state.vEdges.has("v:1:0"), false);
+  assert.equal(state.vEdges.has("v:2:0"), true);
+  assert.equal(state.bayCells.has("0,0"), true);
+  assert.equal(state.bayCells.has("1,0"), true);
+  const kitchen = state.labels.find((label) => label.text === "厨房");
+  assert.ok(kitchen);
+  assert.equal(kitchen.cells.includes("0,0"), true);
+  assert.equal(kitchen.cells.includes("1,0"), true);
+  const door = state.doors.find((item) => item.id === "d1");
+  assert.ok(door);
+  assert.equal(door.line, 2);
+  assert.equal(door.local, 1700);
+  assert.equal(splitInterval(state, "x", 0, 100).ok, false);
 });
 
 test("reordering intervals moves lengths and leaves walls on the same indices", () => {

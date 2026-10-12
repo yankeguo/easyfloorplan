@@ -11,6 +11,7 @@ import {
   computeSpaces,
   spaceIsExterior,
   edgeKey,
+  parseEdgeKey,
   findRunContainingEdge,
   fitDoor,
   gridSpan,
@@ -428,6 +429,102 @@ function remapBayCells(cells: ReadonlySet<string>, axis: Axis, index: number): S
     next.add(`${column},${row}`);
   }
   return next;
+}
+
+function expandEdgeSet(edgeSet: ReadonlySet<string>, axis: Axis, index: number): Set<string> {
+  const next = new Set<string>();
+  for (const key of edgeSet) {
+    const edge = parseEdgeKey(key);
+    const along = axis === "x" ? "h" : "v";
+    if (edge.dir === along) {
+      if (edge.index > index) next.add(edgeKey(edge.dir, edge.line, edge.index + 1));
+      else if (edge.index === index) {
+        next.add(edgeKey(edge.dir, edge.line, index));
+        next.add(edgeKey(edge.dir, edge.line, index + 1));
+      } else next.add(key);
+    } else if (edge.line > index) {
+      next.add(edgeKey(edge.dir, edge.line + 1, edge.index));
+    } else {
+      next.add(key);
+    }
+  }
+  return next;
+}
+
+function expandCellKeys(keys: Iterable<string>, axis: Axis, index: number): string[] {
+  const next: string[] = [];
+  for (const key of keys) {
+    let [column, row] = key.split(",").map(Number);
+    if (!Number.isInteger(column) || !Number.isInteger(row)) continue;
+    if (axis === "x") {
+      if (column === index) {
+        next.push(`${index},${row}`, `${index + 1},${row}`);
+        continue;
+      }
+      if (column > index) column += 1;
+    } else {
+      if (row === index) {
+        next.push(`${column},${index}`, `${column},${index + 1}`);
+        continue;
+      }
+      if (row > index) row += 1;
+    }
+    next.push(`${column},${row}`);
+  }
+  return next;
+}
+
+function expandDoors(
+  doors: readonly Door[],
+  axis: Axis,
+  index: number,
+  oldPositions: readonly number[],
+  newPositions: readonly number[],
+): Door[] {
+  const next: Door[] = [];
+  for (const door of doors) {
+    const alongAxis = door.dir === "h" ? "x" : "y";
+    if (alongAxis !== axis) {
+      next.push(door.line > index ? { ...door, line: door.line + 1 } : { ...door });
+      continue;
+    }
+    const meter = (oldPositions[door.anchor] ?? 0) + door.local;
+    next.push({ ...door, ...anchorFromMeter(newPositions, meter) });
+  }
+  return next;
+}
+
+export function splitInterval(state: PlanState, axis: Axis, index: number, value: unknown): ActionResult {
+  const list = intervalList(state, axis);
+  if (index < 0 || index >= list.length) return { ok: false, message: "找不到这段间隔" };
+  if (list.length >= MAX_INTERVALS) return { ok: false, message: `最多 ${MAX_INTERVALS} 段间隔` };
+  const total = list[index] ?? 0;
+  const number = typeof value === "number" ? value : Number(String(value).trim());
+  const first = roundMm(number);
+  const second = total - first;
+  if (
+    !Number.isFinite(number) ||
+    first < MIN_INTERVAL ||
+    second < MIN_INTERVAL ||
+    first > MAX_INTERVAL ||
+    second > MAX_INTERVAL
+  ) {
+    return { ok: false, message: `两段都需要在 ${MIN_INTERVAL} mm 到 ${MAX_INTERVAL} mm 之间` };
+  }
+  const oldPositions = prefixSums(list);
+  list.splice(index, 1, first, second);
+  const newPositions = prefixSums(list);
+  state.hEdges = expandEdgeSet(state.hEdges, axis, index);
+  state.vEdges = expandEdgeSet(state.vEdges, axis, index);
+  state.windowEdges = expandEdgeSet(state.windowEdges, axis, index);
+  state.slidingEdges = expandEdgeSet(state.slidingEdges, axis, index);
+  state.bayCells = new Set(expandCellKeys(state.bayCells, axis, index));
+  state.doors = expandDoors(state.doors, axis, index, oldPositions, newPositions);
+  state.labels = state.labels.flatMap((label) => {
+    const cells = expandCellKeys(label.cells, axis, index);
+    return cells.length > 0 ? [{ ...label, cells }] : [];
+  });
+  return { ok: true };
 }
 
 export function removeIntervalAt(state: PlanState, axis: Axis, index: number): ActionResult {

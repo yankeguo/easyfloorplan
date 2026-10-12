@@ -34,6 +34,7 @@ import {
   runContaining,
   serialize,
   setIntervalValue,
+  splitInterval,
   setSpaceLabel,
   settleSequences,
   spacesOf,
@@ -126,6 +127,12 @@ const editor = required("label-editor", HTMLInputElement);
 const hint = required("hint", HTMLElement);
 const status = required("status", HTMLElement);
 const sequenceDialog = required("sequence-dialog", HTMLDialogElement);
+const splitDialog = required("split-dialog", HTMLDialogElement);
+const splitForm = required("split-form", HTMLFormElement);
+const splitHelp = required("split-help", HTMLElement);
+const splitValue = required("split-value", HTMLInputElement);
+const splitPreview = required("split-preview", HTMLElement);
+let splitTarget: { axis: Axis; index: number } | null = null;
 const sequenceForm = required("sequence-form", HTMLFormElement);
 const sequenceEditor = required("sequence-editor", HTMLElement);
 const sequencePreview = required("sequence-preview", HTMLElement);
@@ -291,6 +298,12 @@ sequenceForm.addEventListener("input", onSequenceInput);
 required("sequence-cancel", HTMLButtonElement).addEventListener("click", () => {
   app.sequenceDraft = null;
   sequenceDialog.close();
+});
+splitForm.addEventListener("submit", onSplitSubmit);
+splitForm.addEventListener("input", updateSplitPreview);
+required("split-cancel", HTMLButtonElement).addEventListener("click", () => {
+  splitTarget = null;
+  splitDialog.close();
 });
 sidebar.addEventListener(
   "wheel",
@@ -513,6 +526,61 @@ function renderIntervals(): void {
   required("panel-y", HTMLElement).innerHTML = intervalMarkup("y");
 }
 
+function openSplitDialog(axis: Axis, index: number): void {
+  const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
+  const total = list[index];
+  if (total == null) return;
+  if (list.length >= MAX_INTERVALS) {
+    toast(`最多 ${MAX_INTERVALS} 段间隔`);
+    return;
+  }
+  if (total < MIN_INTERVAL * 2) {
+    toast(`这段不到 ${MIN_INTERVAL * 2} mm，拆不开`);
+    return;
+  }
+  splitTarget = { axis, index };
+  const direction = axis === "x" ? "从左端" : "从下端";
+  splitHelp.textContent = `这段共 ${formatMm(total)} mm。第一段${direction}量起，剩下的作为第二段。墙上的门、窗和飘窗会跟着分到两段里。`;
+  const half = Math.min(total - MIN_INTERVAL, Math.max(MIN_INTERVAL, Math.round(total / 2)));
+  splitValue.value = String(half);
+  splitValue.max = String(total - MIN_INTERVAL);
+  updateSplitPreview();
+  splitDialog.showModal();
+  splitValue.focus();
+  splitValue.select();
+}
+
+function updateSplitPreview(): void {
+  if (!splitTarget) return;
+  const list = splitTarget.axis === "x" ? app.state.xIntervals : app.state.yIntervals;
+  const total = list[splitTarget.index] ?? 0;
+  const first = roundMm(Number(splitValue.value));
+  const second = total - first;
+  const valid =
+    Number.isFinite(first) &&
+    first >= MIN_INTERVAL &&
+    second >= MIN_INTERVAL &&
+    first <= MAX_INTERVAL &&
+    second <= MAX_INTERVAL;
+  splitValue.classList.toggle("invalid", !valid);
+  splitPreview.textContent = valid
+    ? `拆成 ${formatMm(first)} mm 和 ${formatMm(second)} mm。`
+    : `两段都需要在 ${MIN_INTERVAL} mm 到 ${MAX_INTERVAL} mm 之间。`;
+}
+
+function onSplitSubmit(event: SubmitEvent): void {
+  event.preventDefault();
+  if (!splitTarget) return;
+  const target = splitTarget;
+  const result = mutate(() => splitInterval(app.state, target.axis, target.index, splitValue.value));
+  if (!result.ok) return;
+  splitTarget = null;
+  splitDialog.close();
+  app.selection = null;
+  app.anchor = null;
+  refresh({ intervals: true, refit: true });
+}
+
 function intervalMarkup(axis: Axis): string {
   const list = axis === "x" ? app.state.xIntervals : app.state.yIntervals;
   const title = axis === "x" ? "横向间隔" : "纵向间隔";
@@ -530,6 +598,7 @@ function intervalMarkup(axis: Axis): string {
             <input data-axis="${axis}" data-index="${index}" type="number" min="${MIN_INTERVAL}" max="${MAX_INTERVAL}" step="1" value="${formatMm(value)}" inputmode="numeric" aria-label="${title} ${index + 1}" />
           </label>
           <em>mm</em>
+          <button type="button" class="split" data-action="split-interval" data-axis="${axis}" data-index="${index}" ${list.length >= MAX_INTERVALS || value < MIN_INTERVAL * 2 ? "disabled" : ""} aria-label="拆分第 ${index + 1} 段">拆分</button>
           <button type="button" class="remove" data-action="remove-interval" data-axis="${axis}" data-index="${index}" ${list.length <= 1 ? "disabled" : ""} aria-label="删除第 ${index + 1} 段">×</button>
         </div>`,
     )
@@ -675,6 +744,12 @@ function onSidebarClick(event: MouseEvent): void {
   if (action === "open-sequences") {
     if (!isAxis(button.dataset.axis)) return;
     openSequenceDialog(button.dataset.axis);
+    return;
+  }
+  if (action === "split-interval") {
+    const axis = button.dataset.axis;
+    if (!isAxis(axis)) return;
+    openSplitDialog(axis, Number(button.dataset.index));
     return;
   }
   if (action === "remove-interval") {

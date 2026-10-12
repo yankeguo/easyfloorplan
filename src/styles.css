@@ -147,7 +147,7 @@ section p, .rules {
 
 .interval-row {
   display: grid;
-  grid-template-columns: 22px 1fr auto auto;
+  grid-template-columns: 22px 1fr auto auto auto;
   gap: 6px;
   align-items: center;
   margin-bottom: 6px;
@@ -202,6 +202,18 @@ section p, .rules {
 
 .interval-row input.invalid { border-color: var(--danger); background: #fff4f1; }
 
+.interval-row .split {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.interval-row .split:hover { border-color: var(--teal); color: var(--teal-dark); }
+
 .interval-row .remove {
   width: 28px;
   height: 32px;
@@ -232,10 +244,29 @@ dialog {
 
 dialog::backdrop { background: rgba(36, 31, 27, 0.38); }
 
-#sequence-form { padding: 16px; }
+#sequence-form, #split-form { padding: 16px; }
 
-#sequence-form h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0; }
-#sequence-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+#sequence-form h2, #split-form h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0; }
+#sequence-help, #split-help, #split-preview { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.split-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+
+.split-field input {
+  width: 120px;
+  border: 1px solid #ddd4c8;
+  background: white;
+  border-radius: 8px;
+  padding: 7px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.split-field input.invalid { border-color: var(--danger); background: #fff4f1; }
 
 #sequence-editor { max-height: 48vh; overflow: auto; margin: 10px 0; }
 
