@@ -1,6 +1,7 @@
 {
   "name": "easyfloorplan",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "bun ./src/index.html",
