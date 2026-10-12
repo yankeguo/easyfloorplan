@@ -200,27 +200,20 @@ test("a continuous wall stays whole when settled cuts no longer match the old ba
   assert.equal(state.vEdges.has("v:1:0"), false);
 });
 
-test("a saved meter drawing loads once as millimeters", () => {
-  const legacy = {
-    v: 1,
-    xIntervals: [3.9, 3.3, 2.7],
-    yIntervals: [4.8, 3],
-    hEdges: [],
-    vEdges: ["v:0:0"],
-    windowEdges: [],
-    doors: [{ id: "d1", dir: "v", line: 0, anchor: 0, local: 1.7, hinge: "low", side: 1 }],
-    labels: [{ id: "l1", text: "厨房", cells: ["0,0"] }],
-    nextId: 3,
+test("a plan file round-trips and rejects an older document", () => {
+  const state = createSample();
+  const saved = JSON.parse(serialize(state)) as {
+    version: number;
+    walls: { h: string[] };
+    doors: Array<Record<string, unknown>>;
   };
-  const state = deserialize(legacy);
-  assert.deepEqual(state.xIntervals, [3900, 3300, 2700]);
-  assert.deepEqual(state.yIntervals, [4800, 3000]);
-  assert.equal(state.doors[0].local, 1700);
-  const saved = JSON.parse(serialize(state));
-  assert.equal(saved.v, 2);
-  const again = deserialize(saved);
-  assert.deepEqual(again.xIntervals, [3900, 3300, 2700]);
-  assert.equal(again.doors[0].local, 1700);
+  assert.equal(saved.version, 3);
+  assert.equal(saved.walls.h.includes("0:0"), true);
+  assert.equal(saved.doors.some((door) => "hinge" in door || "side" in door), false);
+  const again = deserialize(serialize(state));
+  assert.deepEqual(again.xIntervals, state.xIntervals);
+  assert.equal(again.doors.find((door) => door.id === "d1")?.local, 1700);
+  assert.throws(() => deserialize(JSON.stringify({ v: 2, xIntervals: [3000], yIntervals: [3000] })));
 });
 
 test("window toggle marks one bay and leaves the rest of the wall", () => {

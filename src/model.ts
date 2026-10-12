@@ -26,7 +26,7 @@ import {
   removeSpan,
   roundMm,
 } from "./geometry.ts";
-import type { ActionResult, Axis, Door, GridPoint, Label, PlanState, Run, Space } from "./types.ts";
+import type { ActionResult, Axis, Direction, Door, GridPoint, Label, PlanState, Run, Space } from "./types.ts";
 
 export function emptyState(): PlanState {
   return {
@@ -108,10 +108,10 @@ export function createSample(): PlanState {
   addSpan(state.windowEdges, "h", 0, 0, 3);
   addSpan(state.windowEdges, "h", 2, 0, 3);
   state.doors = [
-    { id: "d1", dir: "v", line: 1, anchor: 0, local: 1700, hinge: "low", side: 1 },
-    { id: "d2", dir: "v", line: 1, anchor: 1, local: 900, hinge: "low", side: 1 },
-    { id: "d3", dir: "h", line: 1, anchor: 0, local: 1300, hinge: "low", side: -1 },
-    { id: "d4", dir: "v", line: 2, anchor: 1, local: 1000, hinge: "low", side: -1 },
+    { id: "d1", dir: "v", line: 1, anchor: 0, local: 1700 },
+    { id: "d2", dir: "v", line: 1, anchor: 1, local: 900 },
+    { id: "d3", dir: "h", line: 1, anchor: 0, local: 1300 },
+    { id: "d4", dir: "v", line: 2, anchor: 1, local: 1000 },
   ];
   state.labels = [
     { id: "l1", text: "厨房", cells: ["0,0"] },
@@ -123,78 +123,125 @@ export function createSample(): PlanState {
   return normalize(state);
 }
 
+const PLAN_VERSION = 3;
+
+interface EdgeLists {
+  h: string[];
+  v: string[];
+}
+
+interface PlanFile {
+  version: 3;
+  x: number[];
+  y: number[];
+  walls: EdgeLists;
+  windows: EdgeLists;
+  slides: EdgeLists;
+  bays: string[];
+  doors: Array<{ id: string; dir: Direction; line: number; anchor: number; offset: number }>;
+  labels: Array<{ id: string; text: string; cells: string[] }>;
+  nextId: number;
+}
+
+function edgeKeys(edges: ReadonlySet<string>, dir: Direction): string[] {
+  const prefix = `${dir}:`;
+  return [...edges].filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length)).sort();
+}
+
+function withDirection(keys: readonly string[], dir: Direction): string[] {
+  return keys.map((key) => `${dir}:${key}`);
+}
+
+function isIndexList(value: unknown): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= MAX_INTERVALS &&
+    value.every((item) => Number.isInteger(item) && item >= MIN_INTERVAL && item <= MAX_INTERVAL)
+  );
+}
+
+function isSlotList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && /^\d+:\d+$/.test(item));
+}
+
+function isCellList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string" && /^\d+,\d+$/.test(item));
+}
+
+function isEdgeLists(value: unknown): value is EdgeLists {
+  if (!value || typeof value !== "object") return false;
+  const lists = value as { h?: unknown; v?: unknown };
+  return isSlotList(lists.h) && isSlotList(lists.v);
+}
+
+function isPlanFile(value: unknown): value is PlanFile {
+  if (!value || typeof value !== "object") return false;
+  const file = value as Partial<PlanFile>;
+  if (file.version !== PLAN_VERSION || !isIndexList(file.x) || !isIndexList(file.y)) return false;
+  if (!isEdgeLists(file.walls) || !isEdgeLists(file.windows) || !isEdgeLists(file.slides)) return false;
+  if (!isCellList(file.bays) || !Array.isArray(file.doors) || !Array.isArray(file.labels)) return false;
+  if (!Number.isInteger(file.nextId) || (file.nextId ?? 0) < 1) return false;
+  return file.doors.every(
+    (door) =>
+      !!door &&
+      typeof door.id === "string" &&
+      (door.dir === "h" || door.dir === "v") &&
+      Number.isInteger(door.line) &&
+      Number.isInteger(door.anchor) &&
+      Number.isInteger(door.offset),
+  ) && file.labels.every(
+    (label) => !!label && typeof label.id === "string" && typeof label.text === "string" && isCellList(label.cells),
+  );
+}
+
 export function serialize(state: PlanState): string {
-  return JSON.stringify({
-    v: 2,
-    xIntervals: state.xIntervals,
-    yIntervals: state.yIntervals,
-    hEdges: [...state.hEdges].sort(),
-    vEdges: [...state.vEdges].sort(),
-    windowEdges: [...state.windowEdges].sort(),
-    slidingEdges: [...state.slidingEdges].sort(),
-    bayCells: [...state.bayCells].sort(),
+  const file: PlanFile = {
+    version: PLAN_VERSION,
+    x: state.xIntervals,
+    y: state.yIntervals,
+    walls: { h: edgeKeys(state.hEdges, "h"), v: edgeKeys(state.vEdges, "v") },
+    windows: { h: edgeKeys(state.windowEdges, "h"), v: edgeKeys(state.windowEdges, "v") },
+    slides: { h: edgeKeys(state.slidingEdges, "h"), v: edgeKeys(state.slidingEdges, "v") },
+    bays: [...state.bayCells].sort(),
     doors: state.doors
-      .map((door) => ({ ...door }))
-      .sort((a, b) => String(a.id).localeCompare(String(b.id))),
+      .map((door) => ({
+        id: door.id,
+        dir: door.dir,
+        line: door.line,
+        anchor: door.anchor,
+        offset: door.local,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
     labels: state.labels
-      .map((label) => ({ ...label, cells: [...label.cells].sort() }))
-      .sort((a, b) => String(a.id).localeCompare(String(b.id))),
+      .map((label) => ({ id: label.id, text: label.text, cells: [...label.cells].sort() }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
     nextId: state.nextId,
-  });
+  };
+  return JSON.stringify(file);
 }
 
-function lengthsFromSave(values: unknown, legacy: boolean): number[] {
-  return (Array.isArray(values) ? values : []).map((value) => {
-    const number = Number(value);
-    return legacy ? Math.round(number * 1000) : number;
-  });
-}
-
-export function deserialize(raw: string | SavedPlan): PlanState {
-  const data = typeof raw === "string" ? (JSON.parse(raw) as SavedPlan) : raw;
-  const legacy = !(Number(data.v) >= 2);
+export function deserialize(raw: string): PlanState {
+  const data: unknown = JSON.parse(raw);
+  if (!isPlanFile(data)) throw new Error("不是可识别的户型文件");
   const state = emptyState();
-  state.xIntervals = lengthsFromSave(data.xIntervals, legacy);
-  state.yIntervals = lengthsFromSave(data.yIntervals, legacy);
-  state.hEdges = new Set(data.hEdges || []);
-  state.vEdges = new Set(data.vEdges || []);
-  state.windowEdges = new Set(data.windowEdges || []);
-  state.slidingEdges = new Set(data.slidingEdges || []);
-  state.bayCells = new Set(data.bayCells || []);
-  state.doors = (data.doors || []).map((door) => ({
-    ...door,
-    local: legacy ? Math.round(Number(door.local) * 1000) : Number(door.local),
-  })) as Door[];
-  state.labels = (data.labels || []).map((label) => ({
-    ...label,
-    cells: [...label.cells],
+  state.xIntervals = data.x.slice(0, MAX_INTERVALS);
+  state.yIntervals = data.y.slice(0, MAX_INTERVALS);
+  state.hEdges = new Set(withDirection(data.walls.h, "h"));
+  state.vEdges = new Set(withDirection(data.walls.v, "v"));
+  state.windowEdges = new Set([...withDirection(data.windows.h, "h"), ...withDirection(data.windows.v, "v")]);
+  state.slidingEdges = new Set([...withDirection(data.slides.h, "h"), ...withDirection(data.slides.v, "v")]);
+  state.bayCells = new Set(data.bays);
+  state.doors = data.doors.map((door) => ({
+    id: door.id,
+    dir: door.dir,
+    line: door.line,
+    anchor: door.anchor,
+    local: door.offset,
   }));
-  state.nextId = data.nextId || 1;
+  state.labels = data.labels.map((label) => ({ id: label.id, text: label.text, cells: [...label.cells] }));
+  state.nextId = data.nextId;
   return normalize(state);
-}
-
-interface SavedDoor {
-  id: string;
-  dir: string;
-  line: number;
-  anchor: number;
-  local: number;
-  hinge: string;
-  side: number;
-}
-
-interface SavedPlan {
-  v?: number;
-  xIntervals?: unknown;
-  yIntervals?: unknown;
-  hEdges?: string[];
-  vEdges?: string[];
-  windowEdges?: string[];
-  slidingEdges?: string[];
-  bayCells?: string[];
-  doors?: SavedDoor[];
-  labels?: Label[];
-  nextId?: number;
 }
 
 function intervalList(state: PlanState, axis: Axis): number[] {
@@ -624,19 +671,6 @@ export function toggleSlide(state: PlanState, dir: Run["dir"], line: number, ind
   return { ok: true, on: turningOn };
 }
 
-function defaultDoorSide(state: PlanState, run: Run): 1 | -1 {
-  const columns = state.xIntervals.length;
-  const rows = state.yIntervals.length;
-  if (run.dir === "h") {
-    if (run.line === 0) return -1;
-    if (run.line === rows) return 1;
-  } else {
-    if (run.line === 0) return -1;
-    if (run.line === columns) return 1;
-  }
-  return 1;
-}
-
 export function placeDoor(state: PlanState, run: Run, centerMeter: number): ActionResult {
   const positions = axisPositions(state, run.dir);
   const runStart = positions[run.start];
@@ -652,8 +686,6 @@ export function placeDoor(state: PlanState, run: Run, centerMeter: number): Acti
     id: `d${state.nextId}`,
     dir: run.dir,
     line: run.line,
-    hinge: "low",
-    side: defaultDoorSide(state, run),
     ...anchorFromMeter(positions, requested),
   };
   const fitted = fitDoor(draft, edgesFor(state, run.dir), positions, state.doors);

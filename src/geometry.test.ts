@@ -32,8 +32,6 @@ function door(fields: Omit<Door, "id"> & { id?: string }): Door {
     line: fields.line,
     anchor: fields.anchor,
     local: fields.local,
-    hinge: fields.hinge,
-    side: fields.side,
   };
 }
 
@@ -84,7 +82,7 @@ test("span coverage follows wall edges", () => {
 
 test("a door stays on its bay when that bay shrinks", () => {
   const edges = new Set(["h:0:0", "h:0:1"]);
-  const placed = door({ id: "d", dir: "h", line: 0, anchor: 0, local: 2500, hinge: "low", side: 1 });
+  const placed = door({ id: "d", dir: "h", line: 0, anchor: 0, local: 2500 });
   const fitted = fitDoor(placed, edges, [0, 2000, 5000], []);
   assert.ok(fitted);
   const [start, end] = doorSpanMeters(fitted, [0, 2000, 5000]);
@@ -98,14 +96,14 @@ test("doors may touch but may not overlap", () => {
   const edges = new Set(["v:1:0"]);
   const positions = [0, 4000];
   const first = fitDoor(
-    door({ id: "a", dir: "v", line: 1, anchor: 0, local: 0, hinge: "low", side: 1 }),
+    door({ id: "a", dir: "v", line: 1, anchor: 0, local: 0 }),
     edges,
     positions,
     [],
   );
   assert.ok(first);
   const second = fitDoor(
-    door({ id: "b", dir: "v", line: 1, anchor: 0, local: 800, hinge: "low", side: 1 }),
+    door({ id: "b", dir: "v", line: 1, anchor: 0, local: 800 }),
     edges,
     positions,
     [first],
@@ -113,7 +111,7 @@ test("doors may touch but may not overlap", () => {
   assert.ok(second);
   assert.equal(positions[second.anchor] + second.local, 800);
   const blocked = fitDoor(
-    door({ id: "c", dir: "v", line: 1, anchor: 0, local: 400, hinge: "low", side: 1 }),
+    door({ id: "c", dir: "v", line: 1, anchor: 0, local: 400 }),
     edges,
     positions,
     [first],
@@ -126,7 +124,7 @@ test("doors may touch but may not overlap", () => {
 
 test("a door opening is 800 mm between the two jambs", () => {
   const horizontal = doorGeometry(
-    door({ dir: "h", line: 0, anchor: 0, local: 500, hinge: "low", side: 1 }),
+    door({ dir: "h", line: 0, anchor: 0, local: 500 }),
     [0, 4000],
     [0, 3000],
   );
@@ -135,7 +133,7 @@ test("a door opening is 800 mm between the two jambs", () => {
   assert.ok(Math.abs(horizontal.end - horizontal.start - DOOR_WIDTH) < 1e-9);
 
   const vertical = doorGeometry(
-    door({ dir: "v", line: 1, anchor: 0, local: 0, hinge: "high", side: -1 }),
+    door({ dir: "v", line: 1, anchor: 0, local: 0 }),
     [0, 4000],
     [0, 3000],
   );
@@ -148,7 +146,7 @@ test("normalize is stable", () => {
   const edges = new Set(["h:0:0", "h:0:1"]);
   const xPos = [0, 3000, 6500];
   const doors = [
-    door({ id: "d", dir: "h", line: 0, anchor: 0, local: 400, hinge: "high", side: -1 }),
+    door({ id: "d", dir: "h", line: 0, anchor: 0, local: 400 }),
   ];
   const once = normalizeDoors(doors, edges, new Set<string>(), xPos, [0, 1000]);
   const twice = normalizeDoors(once, edges, new Set(), xPos, [0, 1000]);
@@ -166,10 +164,10 @@ test("removing a bay remaps walls, doors and labels", () => {
   const newPositions = prefixSums([3000, 5000]);
   const doors = remapDoors(
     [
-      door({ id: "keep", dir: "h", line: 0, anchor: 2, local: 1500, hinge: "low", side: 1 }),
-      door({ id: "drop", dir: "h", line: 0, anchor: 1, local: 1000, hinge: "low", side: 1 }),
-      door({ id: "line", dir: "v", line: 3, anchor: 0, local: 200, hinge: "low", side: 1 }),
-      door({ id: "gone", dir: "v", line: 2, anchor: 0, local: 200, hinge: "low", side: 1 }),
+      door({ id: "keep", dir: "h", line: 0, anchor: 2, local: 1500 }),
+      door({ id: "drop", dir: "h", line: 0, anchor: 1, local: 1000 }),
+      door({ id: "line", dir: "v", line: 3, anchor: 0, local: 200 }),
+      door({ id: "gone", dir: "v", line: 2, anchor: 0, local: 200 }),
     ],
     "x",
     1,

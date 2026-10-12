@@ -1,8 +1,6 @@
 export type Axis = "x" | "y";
 export type Direction = "h" | "v";
 export type Tool = "select" | "wall" | "erase" | "door" | "window" | "slide" | "bay" | "label";
-export type Hinge = "low" | "high";
-export type Side = 1 | -1;
 
 export interface Door {
   id: string;
@@ -10,8 +8,6 @@ export interface Door {
   line: number;
   anchor: number;
   local: number;
-  hinge: Hinge;
-  side: Side;
 }
 
 export interface Label {

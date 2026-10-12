@@ -119,7 +119,7 @@ const TOOL_KEYS: Record<string, Tool> = {
   b: "bay",
   l: "label",
 };
-const STORAGE_KEY = "easyfloorplan.v1";
+const STORAGE_KEY = "easyfloorplan.v3";
 
 const canvas = required("plan", HTMLCanvasElement);
 const sidebar = required("sidebar", HTMLElement);
@@ -1525,22 +1525,11 @@ async function loadJson(file: File): Promise<void> {
     toast("读不到这个文件");
     return;
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    toast("这个文件不是 JSON");
-    return;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    toast("这个 JSON 不是户型文件");
-    return;
-  }
   let next: PlanState;
   try {
-    next = deserialize(JSON.stringify(parsed));
-  } catch {
-    toast("这个 JSON 读不出来");
+    next = deserialize(text);
+  } catch (error) {
+    toast(error instanceof SyntaxError ? "这个文件不是 JSON" : "这个 JSON 不是户型文件");
     return;
   }
   if (app.editor) {
